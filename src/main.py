@@ -339,3 +339,13 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
 def health():
     return {"status": "alive"}
 
+
+@app.delete("/api/cleanup")
+def cleanup(db: Session = Depends(get_db)):
+    cutoff = datetime.utcnow() - timedelta(days=7)
+
+    db.query(BedReading).filter(BedReading.timestamp < cutoff).delete()
+    db.commit()
+
+    return {"status": "cleaned"}
+
