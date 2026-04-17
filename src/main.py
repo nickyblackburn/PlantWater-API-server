@@ -670,9 +670,20 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
 
     water = soil_dry and not rain_expected
 
-    # 🚰 trigger valve automatically
+    now = datetime.utcnow()
+
     if water:
-        water_bed(bed_id, config.watering_duration_sec)
+        active_valves[bed_id] = {
+            "state": "ON",
+            "until": now + timedelta(seconds=config.watering_duration_sec)
+        }
+    else:
+        # optional: ensure OFF if not watering
+        active_valves.pop(bed_id, None)
+
+    # 🚰 trigger valve automatically
+    #if water:
+    #    water_bed(bed_id, config.watering_duration_sec)
 
     return {
         "bed_id": bed_id,
