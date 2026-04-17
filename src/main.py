@@ -1100,7 +1100,7 @@ def about_page():
         <span class="tag">SQLAlchemy</span>
         <span class="tag">Chart.js</span>
         <span class="tag">Bootstrap</span>
-        <span class="tag">Python Simulator</span>
+        <span class="tag">Bed Modules (ESP32) based</span>
         <span class="tag">OpenWeather API</span>
     </div>
 
