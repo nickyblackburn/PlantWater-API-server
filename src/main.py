@@ -30,7 +30,10 @@ global_weather = {
     "last_update": None
 }
 
+active_valves = {}  # bed_id -> {"state": "ON/OFF", "until": datetime}
+
 # Initialize FastAPI application with title and description
+
 app = FastAPI(title="Smart Irrigation System")
 
 # Define database URL (SQLite database stored locally)
@@ -661,19 +664,25 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
         db.commit()
         db.refresh(config)
 
- 
     soil_dry = average_moisture > config.moisture_threshold
+
     weather = current_weather()
     rain_expected = weather["is_raining_now"]
 
+    water = soil_dry and not rain_expected
+
+    # 🚰 trigger valve automatically
+    if water:
+        water_bed(bed_id, config.watering_duration_sec)
+
     return {
         "bed_id": bed_id,
-        "water": soil_dry and not rain_expected,
+        "water": water,
         "soil_dry": soil_dry,
         "rain_expected": rain_expected,
-        "weather": weather
+        "weather": weather,
+        "valve_state": active_valves.get(bed_id, {"state": "OFF"})["state"]
     }
-
 # ============================================================
 # 🧪 SYSTEM HEALTH & MAINTENANCE ENDPOINTS
 # ============================================================
@@ -941,3 +950,38 @@ def current_weather():
         "temp": data["main"]["temp"],
         "humidity": data["main"]["humidity"],
     }
+
+
+
+@app.post("/api/water")
+def water_bed(bed_id: str, duration: int = 3):
+    """
+    Turns valve ON for a fixed duration (simulation of irrigation)
+    """
+
+    now = datetime.utcnow()
+    active_valves[bed_id] = {
+        "state": "ON",
+        "until": now + timedelta(seconds=duration)
+    }
+
+    return {
+        "bed_id": bed_id,
+        "valve_state": "ON",
+        "duration": duration
+    }
+
+@app.get("/api/valve/{bed_id}")
+def valve_status(bed_id: str):
+    now = datetime.utcnow()
+
+    v = active_valves.get(bed_id)
+
+    if not v:
+        return {"bed_id": bed_id, "valve_state": "OFF"}
+
+    if now > v["until"]:
+        active_valves.pop(bed_id, None)
+        return {"bed_id": bed_id, "valve_state": "OFF"}
+
+    return {"bed_id": bed_id, "valve_state": "ON"}

@@ -15,6 +15,7 @@ soil_state = {
     "bed_4": 550,
 }
 
+
 def simulate_sensor(bed_id):
     """
     fake soil behavior:
@@ -80,14 +81,30 @@ def check_watering(bed_id, avg):
     except:
         return None
 
-
 def apply_watering_effect(bed_id, decision):
     """
-    if server says water → increase soil moisture
+    turns valve ON/OFF based on server decision
     """
-
+    valve_state = {bed: "OFF" for bed in BEDS}
+    watering_timer = {bed: 0 for bed in BEDS}
+    
     if decision and decision.get("water"):
+
+        # turn valve ON
+        valve_state[bed_id] = "ON"
+
+        # simulate watering effect
         soil_state[bed_id] += random.uniform(40, 100)
+
+        # set watering duration (cycles)
+        watering_timer[bed_id] = 3
+
+    else:
+        # countdown watering timer
+        if watering_timer[bed_id] > 0:
+            watering_timer[bed_id] -= 1
+        else:
+            valve_state[bed_id] = "OFF"
 
 
 def run():
