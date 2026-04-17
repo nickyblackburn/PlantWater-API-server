@@ -652,7 +652,6 @@ def update_config(bed_id: str, config: BedConfig, db: Session = Depends(get_db))
 # ============================================================
 # 🌧️ INTELLIGENT WATERING DECISION ENGINE
 # ============================================================
-
 @app.post("/api/should-water")
 def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get_db)):
 
