@@ -132,20 +132,26 @@ def get_weather():
 @app.post("/api/bed-data")
 def receive_data(data: BedData, db: Session = Depends(get_db)):
 
-    reading = BedReading(
-        bed_id=data.bed_id,
-        timestamp=data.timestamp,
-        average=data.average,
-        valve_state=data.valve_state,
-        rssi=data.rssi,
-        sensors=data.sensors
-    )
+    try:
+        reading = BedReading(
+            bed_id=data.bed_id,
+            timestamp=datetime.fromisoformat(data.timestamp),
+            average=float(data.average),
+            valve_state=data.valve_state,
+            rssi=data.rssi,
+            sensors=[float(x) for x in data.sensors]
+        )
 
-    db.add(reading)
-    db.commit()
+        db.add(reading)
+        db.commit()
 
-    return {"status": "ok"}
+        return {"status": "ok"}
 
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
 # -----------------------------
 # 📊 LATEST STATE
 # -----------------------------
