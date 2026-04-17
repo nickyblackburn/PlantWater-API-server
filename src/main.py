@@ -791,6 +791,23 @@ def dashboard():
 <!DOCTYPE html>
 <html>
 <head>
+<style>
+@keyframes valvePulse {
+    0%   { box-shadow: 0 0 0 rgba(0,255,120,0.0); transform: scale(1); }
+    50%  { box-shadow: 0 0 18px rgba(0,255,120,0.8); transform: scale(1.02); }
+    100% { box-shadow: 0 0 0 rgba(0,255,120,0.0); transform: scale(1); }
+}
+
+.valve-on {
+    border: 2px solid #00ff78;
+    animation: valvePulse 1s infinite;
+}
+
+.valve-off {
+    border: 2px solid #444;
+    opacity: 0.7;
+}
+</style>
     <title>🌱 Smart Garden</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -813,8 +830,19 @@ def dashboard():
         </div>
     </div>
 
+    <!-- STATS -->
+    <div class="row my-3">
+    <div class="col">
+        <div id="wateringStatus" class="alert alert-dark">
+            💤 No active watering
+        </div>
+    </div>
+</div>
+    
     <!-- BEDS -->
-    <div class="row" id="beds"></div>
+    <div class="row" id="beds">
+    </div>
+    
 
     <!-- GRAPH -->
     <div class="mt-4">
@@ -833,6 +861,7 @@ let moistureChart = null;
 async function loadBeds() {
     const res = await fetch('/api/beds/latest');
     const data = await res.json();
+    
 
     let html = "";
 
