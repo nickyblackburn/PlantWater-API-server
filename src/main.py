@@ -780,88 +780,137 @@ def latest(db: Session = Depends(get_db)):
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
     return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>🌱 Smart Garden</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    </head>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>🌱 Smart Garden</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
 
-    <body class="bg-dark text-light">
-        <div class="container py-4">
+<body class="bg-dark text-light">
+<div class="container py-4">
 
-            <h1>🌱 Smart Garden Dashboard</h1>
+    <h1 class="mb-4">🌱 Smart Garden Dashboard</h1>
 
-            <div class="row my-3">
-                <div class="col">
-                    <div id="weather" class="alert alert-info">Loading weather...</div>
-                </div>
+    <!-- WEATHER -->
+    <div class="row my-3">
+        <div class="col">
+            <div id="weather" class="alert alert-info">
+                Loading weather...
             </div>
-
-            <div class="row" id="beds"></div>
-
-            <canvas id="chart"></canvas>
-
         </div>
+    </div>
 
-        <script>
-            async function loadBeds() {
-                const res = await fetch('/api/beds/latest');
-                const data = await res.json();
+    <!-- BEDS -->
+    <div class="row" id="beds"></div>
 
-                let html = "";
+    <!-- GRAPH -->
+    <div class="mt-4">
+        <canvas id="chart"></canvas>
+    </div>
 
-                for (const bed in data) {
-                    const b = data[bed];
-                    html += `
-                        <div class="col-md-4">
-                            <div class="card bg-secondary text-white p-3 mb-3">
-                                <h5>${b.bed_id}</h5>
-                                <p>💧 ${b.average.toFixed(1)}</p>
-                                <p>🚰 ${b.valve_state}</p>
-                            </div>
-                        </div>
-                    `;
-                }
+</div>
 
-                document.getElementById("beds").innerHTML = html;
-            }
+<script>
 
-            async function loadWeather() {
-                const res = await fetch('/api/weather');
-                const data = await res.json();
+let moistureChart = null;
 
-                document.getElementById("weather").innerText =
-                    data.rain_expected ? "🌧 Rain expected" : "☀ No rain";
-            }
+/* =========================
+   🧺 LOAD BEDS
+========================= */
+async function loadBeds() {
+    const res = await fetch('/api/beds/latest');
+    const data = await res.json();
 
-            async function loadGraph() {
-                const res = await fetch('/api/beds/bed_1/graph');
-                const data = await res.json();
+    let html = "";
 
-                new Chart(document.getElementById('chart'), {
-                    type: 'line',
-                    data: {
-                        labels: data.timestamps,
-                        datasets: [{
-                            label: 'Moisture',
-                            data: data.average
-                        }]
-                    }
-                });
-            }
+    for (const bed in data) {
+        const b = data[bed];
 
-            loadBeds();
-            loadWeather();
-            loadGraph();
+        html += `
+        <div class="col-md-4">
+            <div class="card bg-secondary text-white p-3 mb-3">
+                <h5>${b.bed_id}</h5>
+                <p>💧 ${b.average.toFixed(1)}</p>
+                <p>🚰 ${b.valve_state}</p>
+            </div>
+        </div>
+        `;
+    }
 
-            setInterval(loadBeds, 3000);
-        </script>
-    </body>
-    </html>
-    """
+    document.getElementById("beds").innerHTML = html;
+}
 
+/* =========================
+   🌧 WEATHER
+========================= */
+async function loadWeather() {
+    const res = await fetch('/api/weather');
+    const data = await res.json();
+
+    const msg = data.will_rain
+        ? "🌧 Rain expected"
+        : "☀ No rain";
+
+    document.getElementById("weather").innerText = msg;
+}
+
+/* =========================
+   📈 INIT GRAPH
+========================= */
+async function initGraph() {
+    const res = await fetch('/api/beds/bed_1/graph');
+    const data = await res.json();
+
+    const ctx = document.getElementById('chart');
+
+    moistureChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.timestamps,
+            datasets: [{
+                label: 'Moisture',
+                data: data.average,
+                borderWidth: 2,
+                tension: 0.3
+            }]
+        }
+    });
+}
+
+/* =========================
+   🔄 UPDATE GRAPH
+========================= */
+async function updateGraph() {
+    if (!moistureChart) return;
+
+    const res = await fetch('/api/beds/bed_1/graph');
+    const data = await res.json();
+
+    moistureChart.data.labels = data.timestamps;
+    moistureChart.data.datasets[0].data = data.average;
+
+    moistureChart.update();
+}
+
+/* =========================
+   🚀 START
+========================= */
+loadBeds();
+loadWeather();
+initGraph();
+
+/* refresh loops */
+setInterval(loadBeds, 3000);
+setInterval(loadWeather, 10000);
+setInterval(updateGraph, 3000);
+
+</script>
+
+</body>
+</html>
+"""
 @app.get("/api/will-rain")
 
 def weather_api():
