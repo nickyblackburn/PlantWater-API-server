@@ -1039,8 +1039,8 @@ def about_page():
     <div class="card p-4 mb-4">
         <h4>📌 Project Overview</h4>
         <p>
-            This system simulates a smart irrigation network using FastAPI,
-            a sensor simulator, and a real-time dashboard.
+            This system is a smart irrigation network using FastAPI,
+            Bed Modules (esp32 controlled Auto watering systems), and a real-time dashboard.
             It models how an ESP32-based garden would monitor soil moisture
             and automatically control watering based on environmental conditions.
         </p>
@@ -1064,7 +1064,7 @@ def about_page():
         <h4>🌿 Features</h4>
 
         <ul>
-            <li>Real-time soil moisture simulation</li>
+            <li>Real-time soil moisture monitoring</li>
             <li>Automatic watering decision engine</li>
             <li>Weather-aware irrigation logic</li>
             <li>Historical sensor data storage</li>
@@ -1093,7 +1093,7 @@ def about_page():
         <h4>🧠 System Flow</h4>
 
         <pre style="color:#9aa4b2;">
-ESP32 Simulator
+ESP32 Bed Modules (soil moisture & control valves)
     ↓
 FastAPI Server
     ↓
