@@ -150,3 +150,8 @@ The app also serves a simple dashboard at `/` with a bed status summary and a mo
 If you want to change the weather location or API key, update `CITY` and `OPENWEATHER_API_KEY` in `src/main.py`.
 
 
+## TODO:
+
+1. Get the watering status to show up on dashbord 
+2. get text messageing the stats of the system working 
+3. add a watering counter life time >w<

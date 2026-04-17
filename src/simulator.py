@@ -9,8 +9,8 @@ BEDS = ["bed_1", "bed_2", "bed_3", "bed_4"]
 
 # 🌱 simulate soil state per bed
 soil_state = {
-    "bed_1": 600,
-    "bed_2": 500,
+    "bed_1": 706,
+    "bed_2": 80,
     "bed_3": 450,
     "bed_4": 550,
 }

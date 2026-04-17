@@ -664,7 +664,6 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
         db.refresh(config)
 
     soil_dry = average_moisture > config.moisture_threshold
-
     weather = current_weather()
     rain_expected = weather["is_raining_now"]
 
@@ -672,18 +671,19 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
 
     now = datetime.utcnow()
 
+    # 💧 THIS is the missing piece
     if water:
         active_valves[bed_id] = {
             "state": "ON",
             "until": now + timedelta(seconds=config.watering_duration_sec)
         }
     else:
-        # optional: ensure OFF if not watering
-        active_valves.pop(bed_id, None)
-
-    # 🚰 trigger valve automatically
-    #if water:
-    #    water_bed(bed_id, config.watering_duration_sec)
+        # optional safety turn-off logic
+        if bed_id not in active_valves:
+            active_valves[bed_id] = {
+                "state": "OFF",
+                "until": now
+            }
 
     return {
         "bed_id": bed_id,
@@ -691,7 +691,7 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
         "soil_dry": soil_dry,
         "rain_expected": rain_expected,
         "weather": weather,
-        "valve_state": active_valves.get(bed_id, {"state": "OFF"})["state"]
+        "valve_state": active_valves.get(bed_id, {}).get("state", "OFF")
     }
 # ============================================================
 # 🧪 SYSTEM HEALTH & MAINTENANCE ENDPOINTS
@@ -745,24 +745,21 @@ def cleanup(db: Session = Depends(get_db)):
 
 @app.get("/api/beds/latest")
 def latest(db: Session = Depends(get_db)):
+
     subquery = db.query(BedReading).order_by(BedReading.timestamp.desc()).all()
-
     seen = {}
-
     now = datetime.utcnow()
 
     for r in subquery:
         if r.bed_id not in seen:
+
             live = active_valves.get(r.bed_id)
 
-            # default from DB
-            valve_state = r.valve_state
-
-            # override with live state if active
             if live and now <= live["until"]:
                 valve_state = "ON"
             else:
-                valve_state = "OFF"
+                # fallback to DB state instead of forcing OFF
+                valve_state = r.valve_state
 
             seen[r.bed_id] = {
                 "bed_id": r.bed_id,
