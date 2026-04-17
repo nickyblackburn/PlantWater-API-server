@@ -1,13 +1,20 @@
 import discord
 from discord.ext import commands
 import requests
+import os
+from dotenv import load_dotenv
 
 # =========================
-# ⚙️ CONFIG
+# 🔐 LOAD ENV VARS
 # =========================
-TOKEN = "PUT_YOUR_NEW_TOKEN_HERE"
+load_dotenv()
+TOKEN = os.getenv("DISCORD_TOKEN")
+
 API_BASE = "http://127.0.0.1:8000"
 
+# =========================
+# ⚙️ INTENTS (IMPORTANT)
+# =========================
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -21,39 +28,33 @@ bot = commands.Bot(command_prefix=".", intents=intents)
 async def help(ctx):
     embed = discord.Embed(
         title="🌱 Smart Garden Bot",
-        description="Here are all available commands for your garden system:",
+        description="Available commands:",
         color=0x2ecc71
     )
 
     embed.add_field(
         name="📊 .status",
-        value="Shows moisture levels and valve states for all beds.",
+        value="Shows moisture levels and valve states.",
         inline=False
     )
 
     embed.add_field(
-        name="💧 Example Output",
-        value="Bed1 → 512 (Healthy) | ON/OFF",
+        name="🛠️ System",
+        value="ESP32 + FastAPI Smart Irrigation System",
         inline=False
     )
 
-    embed.add_field(
-        name="🛠️ More Commands",
-        value="More features like watering controls and alerts coming soon 🌿",
-        inline=False
-    )
-
-    embed.set_footer(text="Smart Garden System • ESP32 + FastAPI")
+    embed.set_footer(text="Smart Garden System")
 
     await ctx.send(embed=embed)
 
 
 # =========================
-# 🌱 HELPER FUNCTION
+# 🌱 API FUNCTION
 # =========================
 def get_bed_status():
     try:
-        res = requests.get(f"{API_BASE}/api/beds/latest")
+        res = requests.get(f"{API_BASE}/api/beds/latest", timeout=5)
         return res.json()
     except:
         return None
@@ -78,7 +79,11 @@ async def status(ctx):
         await ctx.send("❌ Failed to fetch data from API")
         return
 
-    message = "🌱 **Smart Garden Status**\n\n"
+    embed = discord.Embed(
+        title="🌱 Smart Garden Status",
+        color=0x1abc9c
+    )
+
     active = []
 
     for bed_id, bed in data.items():
@@ -92,22 +97,25 @@ async def status(ctx):
         else:
             state = "Wet"
 
-        message += f"**{bed_id}** → 💧 {avg:.1f} ({state}) | 🚰 {valve}\n"
+        embed.add_field(
+            name=f"{bed_id}",
+            value=f"💧 {avg:.1f} ({state}) | 🚰 {valve}",
+            inline=False
+        )
 
         if valve == "ON":
             active.append(bed_id)
 
-    message += "\n"
+    footer_text = "Currently watering: " + ", ".join(active) if active else "No active watering"
+    embed.set_footer(text=footer_text)
 
-    if active:
-        message += "🚰 **Currently watering:** " + ", ".join(active)
-    else:
-        message += "💤 No active watering"
-
-    await ctx.send(message)
+    await ctx.send(embed=embed)
 
 
 # =========================
 # ▶️ START BOT
 # =========================
-bot.run(TOKEN)
+if not TOKEN:
+    print("❌ Missing DISCORD_TOKEN in .env file")
+else:
+    bot.run(TOKEN)
