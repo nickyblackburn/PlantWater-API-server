@@ -349,3 +349,23 @@ def cleanup(db: Session = Depends(get_db)):
 
     return {"status": "cleaned"}
 
+
+@app.get("/api/beds/latest")
+def latest(db: Session = Depends(get_db)):
+
+    subquery = db.query(BedReading).order_by(BedReading.timestamp.desc()).all()
+
+    seen = {}
+    for r in subquery:
+        if r.bed_id not in seen:
+            seen[r.bed_id] = r
+
+    return {
+        k: {
+            "bed_id": v.bed_id,
+            "average": v.average,
+            "valve_state": v.valve_state,
+            "timestamp": v.timestamp
+        }
+        for k, v in seen.items()
+    }
