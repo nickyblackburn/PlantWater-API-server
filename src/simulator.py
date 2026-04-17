@@ -12,6 +12,7 @@ soil_state = {
     "bed_1": 600,
     "bed_2": 500,
     "bed_3": 450,
+    "bed_4": 550,
 }
 
 def simulate_sensor(bed_id):

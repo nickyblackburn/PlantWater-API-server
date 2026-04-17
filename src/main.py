@@ -663,8 +663,8 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
 
  
     soil_dry = average_moisture < config.moisture_threshold
-    weather = get_weather()
-    rain_expected = str(weather["will_rain"])
+    weather = current_weather()
+    rain_expected = weather["is_raining_now"]
 
     return {
         "bed_id": bed_id,
@@ -862,9 +862,33 @@ def dashboard():
     </html>
     """
 
-@app.get("/api/weather")
+@app.get("/api/will-rain")
 
 def weather_api():
     return get_weather()
 
+@app.get("/api/weather/current")
+def current_weather():
+    """
+    Returns real-time weather conditions (NOT forecast)
+    """
 
+    url = (
+        "https://api.openweathermap.org/data/2.5/weather"
+        f"?q={CITY}&appid={OPENWEATHER_API_KEY}&units=metric"
+    )
+
+    r = requests.get(url)
+    data = r.json()
+
+    weather_main = data["weather"][0]["main"]  # Clear / Rain / Clouds
+    description = data["weather"][0]["description"]
+
+    is_raining_now = weather_main.lower() == "rain"
+
+    return {
+        "current": weather_main,
+        "is_raining_now": is_raining_now,
+        "temp": data["main"]["temp"],
+        "humidity": data["main"]["humidity"],
+    }
