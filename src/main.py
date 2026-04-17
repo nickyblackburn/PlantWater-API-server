@@ -800,6 +800,9 @@ def dashboard():
 <div class="container py-4">
 
     <h1 class="mb-4">🌱 Smart Garden Dashboard</h1>
+    <div class=" text-muted mt-4">
+    Made with 💚 by Nicky Blackburn
+</div>
 
     <!-- WEATHER -->
     <div class="row my-3">
