@@ -5,11 +5,11 @@ import requests
 # =========================
 # ⚙️ CONFIG
 # =========================
-TOKEN = ""
+TOKEN = "MTQ5NDgyMjUyMTEwOTg3MjcyMA.GyaswG.RBmzsCf4N4sFIw3Gz25N-KCu42kGjx6Nb6WD4c"
 API_BASE = "http://127.0.0.1:8000"  # your FastAPI server
 
 intents = discord.Intents.default()
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix=".", intents=intents)
 
 
 # =========================
