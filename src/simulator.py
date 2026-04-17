@@ -48,14 +48,14 @@ def simulate_sensor(bed_id):
 
 
 def send_data(bed_id, sensors, avg):
-  payload = {
+    payload = {
     "bed_id": bed_id,
     "timestamp": datetime.utcnow().isoformat(),
     "sensors": [float(x) for x in sensors],
     "average": float(avg),
     "valve_state": "OFF",
     "rssi": -50
-}
+    }
 
     try:
         r = requests.post(f"{SERVER}/api/bed-data", json=payload)
