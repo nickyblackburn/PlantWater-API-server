@@ -732,55 +732,35 @@ def cleanup(db: Session = Depends(get_db)):
 
     return {"status": "cleaned"}
 
-
 @app.get("/api/beds/latest")
 def latest(db: Session = Depends(get_db)):
-    """
-    Retrieve the most recent reading from each plant bed.
-    
-    Similar to /api/beds but with optimized logic for single latest reading
-    per bed. Useful for dashboards showing current status of all beds.
-    
-    Args:
-        db (Session): Database session from dependency injection
-    
-    Returns:
-        dict: Mapping of bed_id to latest reading (bed_id -> latest data)
-        
-    Example response:
-        {
-            "bed_001": {
-                "bed_id": "bed_001",
-                "average": 510.0,
-                "valve_state": "OFF",
-                "timestamp": "2026-04-17T10:30:00"
-            }
-        }
-    """
-    # Query all readings sorted by timestamp (newest first)
     subquery = db.query(BedReading).order_by(BedReading.timestamp.desc()).all()
 
-    # Dictionary to track latest reading per bed
     seen = {}
-    
-    # Iterate through all readings (ordered newest first)
-    # Keep only the first (latest) reading for each bed
+
+    now = datetime.utcnow()
+
     for r in subquery:
         if r.bed_id not in seen:
-            seen[r.bed_id] = r
+            live = active_valves.get(r.bed_id)
 
-    # Transform to response format
-    return {
-        k: {
-            "bed_id": v.bed_id,
-            "average": v.average,
-            "valve_state": v.valve_state,
-            "timestamp": v.timestamp
-        }
-        for k, v in seen.items()
-    }
+            # default from DB
+            valve_state = r.valve_state
 
+            # override with live state if active
+            if live and now <= live["until"]:
+                valve_state = "ON"
+            else:
+                valve_state = "OFF"
 
+            seen[r.bed_id] = {
+                "bed_id": r.bed_id,
+                "average": r.average,
+                "valve_state": valve_state,
+                "timestamp": r.timestamp
+            }
+
+    return seen
 
 # ============================================================
 # Webapp for ddisplaying data and testing API)
@@ -934,6 +914,35 @@ async function updateGraph() {
     moistureChart.update();
 }
 
+/* ++++++++++++++++++++++++++++++++++
+    🚰 UPDATE WATERING STATUS
+++++++++++++++++++++++++++++++++++ */
+async function loadWateringStatus() {
+    const res = await fetch('/api/beds/latest');
+    const data = await res.json();
+
+    let active = [];
+
+    for (const bed in data) {
+        if (data[bed].valve_state === "ON") {
+            active.push(bed);
+        }
+    }
+
+    const el = document.getElementById("wateringStatus");
+
+    if (active.length === 0) {
+        el.className = "alert alert-dark";
+        el.innerText = "💤 No active watering";
+        return;
+    }
+
+    el.className = "alert alert-success";
+
+    el.innerText =
+        "🚰 Watering active: " +
+        active.join(", ");
+}
 /* =========================
    🚀 START
 ========================= */
