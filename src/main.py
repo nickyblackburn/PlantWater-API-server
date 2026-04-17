@@ -25,11 +25,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 # 🧠 APP SETUP & DATABASE CONFIGURATION
 # ============================================================g
 
-global_weather = {
-    "will_rain": False,
-    "raw": None,
-    "last_update": None
-}
+
 # Initialize FastAPI application with title and description
 app = FastAPI(title="Smart Irrigation System")
 
@@ -206,40 +202,6 @@ class BedConfig(BaseModel):
     
     # Interval between sensor readings (optional update)
     sampling_interval_sec: Optional[int] = None
-
-
-
-# refreshes weather so it doest get suck reading rain every time
-def refresh_weather():
-    global global_weather
-
-    now = datetime.utcnow()
-
-    # optional: only update every 10 min
-    if global_weather["last_update"]:
-        if now - global_weather["last_update"] < timedelta(minutes=10):
-            return global_weather
-
-    url = (
-        "https://api.openweathermap.org/data/2.5/forecast"
-        f"?q={CITY}&appid={OPENWEATHER_API_KEY}&units=metric"
-    )
-
-    r = requests.get(url)
-    data = r.json()
-
-    will_rain = any(
-        item.get("pop", 0) > 0.5
-        for item in data.get("list", [])[:6]
-    )
-
-    global_weather = {
-        "will_rain": will_rain,
-        "raw": data,
-        "last_update": now
-    }
-
-    return global_weather
 
 # ============================================================
 # 🌧️ WEATHER DATA RETRIEVAL & CACHING
@@ -725,7 +687,7 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
 
  
     soil_dry = average_moisture < config.moisture_threshold
-    weather = global_weather
+    weather = get_weather()
     rain_expected = weather["will_rain"]
 
     return {
@@ -924,15 +886,13 @@ def dashboard():
     </html>
     """
 
-@app.get("/api/weather")
-def weather_api():
-    return refresh_weather()
+def get_weather(db=None):
+    now = datetime.utcnow()
 
-
-
-
-def update_weather():
-    global global_weather
+    # cache
+    if weather_cache["last_update"]:
+        if now - weather_cache["last_update"] < timedelta(minutes=10):
+            return weather_cache["data"]
 
     url = (
         "https://api.openweathermap.org/data/2.5/forecast"
@@ -943,25 +903,24 @@ def update_weather():
     data = r.json()
 
     will_rain = any(
-        item.get("pop", 0) > 0.5
+        item.get("pop", 0) > 0.6 and
+        item.get("weather", [{}])[0].get("main") == "Rain"
         for item in data.get("list", [])[:6]
-    )
+)
 
-    global_weather = {
+    result = {
         "will_rain": will_rain,
         "raw": data,
-        "last_update": datetime.utcnow()
+        "last_update": now
     }
 
+    weather_cache["last_update"] = now
+    weather_cache["data"] = result
 
-@app.on_event("startup")
-def start_weather_loop():
-    import threading
-    import time
+    return result
+@app.get("/api/weather")
 
-    def loop():
-        while True:
-            update_weather()
-            time.sleep(600)  # 10 minutes
+def weather_api():
+    return get_weather()
 
-    threading.Thread(target=loop, daemon=True).start()
+
