@@ -225,7 +225,7 @@ def get_weather():
 
     r = requests.get(url)
     data = r.json()
-
+    
     will_rain = any(
         item.get("pop", 0) > 0.5
         for item in data.get("list", [])[:6]
