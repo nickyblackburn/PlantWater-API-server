@@ -838,6 +838,16 @@ def dashboard():
     </div>
 
 </div>
+<!-- FOOTER -->
+<footer class="text-center text-muted mt-5 py-3 border-top border-secondary">
+    <div>
+        🌱 Smart Garden System · Made with 💚 by Nicky Blackburn
+    </div>
+
+    <a href="/about" class="btn btn-sm btn-outline-light mt-2">
+    About This Project</a>
+    </button>
+</footer>
 
 <script>
 
@@ -968,6 +978,147 @@ setInterval(updateGraph, 3000);
 </body>
 </html>
 """
+
+
+# ============================================================
+# 📖 ABOUT PAGE
+# ============================================================
+
+@app.get("/about", response_class=HTMLResponse)
+def about_page():
+    return """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>About · Smart Garden</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            background: #0f1115;
+            color: #e6e6e6;
+        }
+
+        .card {
+            background: #1b1f2a;
+            border: 1px solid #2a2f3a;
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: #2a2f3a;
+            margin: 2px;
+            font-size: 12px;
+        }
+
+        .hero {
+            padding: 40px 0;
+            text-align: center;
+        }
+
+        .glow {
+            color: #00ff9a;
+            text-shadow: 0 0 10px rgba(0,255,154,0.4);
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container py-5">
+
+    <div class="hero">
+        <h1 class="glow">🌱 Smart Garden System</h1>
+        <p class="text-muted">IoT irrigation simulation with weather-aware automation</p>
+    </div>
+
+    <!-- ABOUT -->
+    <div class="card p-4 mb-4">
+        <h4>📌 Project Overview</h4>
+        <p>
+            This system simulates a smart irrigation network using FastAPI,
+            a sensor simulator, and a real-time dashboard.
+            It models how an ESP32-based garden would monitor soil moisture
+            and automatically control watering based on environmental conditions.
+        </p>
+    </div>
+
+    <!-- TECH STACK -->
+    <div class="card p-4 mb-4">
+        <h4>⚙️ Tech Stack</h4>
+
+        <span class="tag">FastAPI</span>
+        <span class="tag">SQLite</span>
+        <span class="tag">SQLAlchemy</span>
+        <span class="tag">Chart.js</span>
+        <span class="tag">Bootstrap</span>
+        <span class="tag">Python Simulator</span>
+        <span class="tag">OpenWeather API</span>
+    </div>
+
+    <!-- FEATURES -->
+    <div class="card p-4 mb-4">
+        <h4>🌿 Features</h4>
+
+        <ul>
+            <li>Real-time soil moisture simulation</li>
+            <li>Automatic watering decision engine</li>
+            <li>Weather-aware irrigation logic</li>
+            <li>Historical sensor data storage</li>
+            <li>Graph-based moisture tracking</li>
+            <li>Configurable watering thresholds</li>
+        </ul>
+    </div>
+
+    <!-- CREATOR -->
+    <div class="card p-4 mb-4">
+        <h4>👤 Creator</h4>
+
+        <p>
+            Built by <b>Nicky Blackburn</b><br>
+            A personal IoT + backend systems project exploring automation,
+            sensors, and real-time data systems.
+        </p>
+
+        <p class="text-muted">
+            Version: 1.0 · Prototype System
+        </p>
+    </div>
+
+    <!-- SYSTEM ARCHITECTURE -->
+    <div class="card p-4 mb-4">
+        <h4>🧠 System Flow</h4>
+
+        <pre style="color:#9aa4b2;">
+ESP32 Simulator
+    ↓
+FastAPI Server
+    ↓
+SQLite Database
+    ↓
+Decision Engine (watering logic)
+    ↓
+Dashboard UI (Chart.js)
+        </pre>
+    </div>
+
+    <!-- NAV -->
+    <div class="text-center mt-4">
+        <a href="/" class="btn btn-outline-light">← Back to Dashboard</a>
+    </div>
+
+</div>
+
+</body>
+</html>
+"""
+
+
+
+
 @app.get("/api/will-rain")
 
 def weather_api():
