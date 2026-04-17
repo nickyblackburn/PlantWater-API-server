@@ -805,9 +805,6 @@ def dashboard():
 <div class="container py-4">
 
     <h1 class="mb-4">🌱 Smart Garden Dashboard</h1>
-    <div class=" text-muted mt-4">
-    Made with 💚 by Nicky Blackburn
-</div>
 
     <!-- WEATHER -->
     <div class="row my-3">
@@ -840,9 +837,9 @@ def dashboard():
 </div>
 <!-- FOOTER -->
 <footer class="text-center text-muted mt-5 py-3 border-top border-secondary">
-    <div>
+   <div class="text-white text-center mt-4">
         🌱 Smart Garden System · Made with 💚 by Nicky Blackburn
-    </div>
+</div>
 
     <a href="/about" class="btn btn-sm btn-outline-light mt-2">
     About This Project</a>
@@ -989,6 +986,54 @@ def about_page():
     return """
 <!DOCTYPE html>
 <html>
+<style>
+    body {
+        background: #0f1115;
+        color: #ffffff;
+    }
+
+    h1, h2, h3, h4, h5 {
+        color: #ffffff !important;
+    }
+
+    p, li, pre {
+        color: #eaeaea;
+    }
+
+    .card {
+        background: #1b1f2a;
+        border: 1px solid #2a2f3a;
+        color: #ffffff;
+    }
+
+    .text-muted {
+        color: #b5b5b5 !important;
+    }
+
+    .tag {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: #2a2f3a;
+        margin: 2px;
+        font-size: 12px;
+        color: #ffffff;
+    }
+
+    .hero {
+        padding: 40px 0;
+        text-align: center;
+    }
+
+    .glow {
+        color: #00ff9a;
+        text-shadow: 0 0 10px rgba(0,255,154,0.4);
+    }
+    h4 {
+    color: #00ff9a !important;
+    text-shadow: 0 0 6px rgba(0,255,154,0.25);
+}
+</style>
 <head>
     <title>About · Smart Garden</title>
 
@@ -1032,7 +1077,7 @@ def about_page():
 
     <div class="hero">
         <h1 class="glow">🌱 Smart Garden System</h1>
-        <p class="text-muted">IoT irrigation simulation with weather-aware automation</p>
+        <p style="color: #ffffff;">IoT irrigation simulation with weather-aware automation</p>
     </div>
 
     <!-- ABOUT -->
