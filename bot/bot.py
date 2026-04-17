@@ -13,38 +13,48 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 API_BASE = "http://127.0.0.1:8000"
 
 # =========================
-# ⚙️ INTENTS (IMPORTANT)
+# ⚙️ INTENTS
 # =========================
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix=".", intents=intents)
-
+bot.remove_command("help")
 
 # =========================
-# 🌱 HELP COMMAND
+# 🌱 HELP COMMAND (FIXED + CLEAN)
 # =========================
 @bot.command()
 async def help(ctx):
     embed = discord.Embed(
-        title="🌱 Smart Garden Bot",
-        description="Available commands:",
+        title="🌱 Smart Garden System",
+        description="Control and monitor your irrigation system in real time.",
         color=0x2ecc71
     )
 
     embed.add_field(
         name="📊 .status",
-        value="Shows moisture levels and valve states.",
+        value="Shows soil moisture + valve states for all beds",
         inline=False
     )
 
     embed.add_field(
-        name="🛠️ System",
-        value="ESP32 + FastAPI Smart Irrigation System",
+        name="🛠️ System Info",
+        value="ESP32 + FastAPI + Discord Bot integration",
         inline=False
     )
 
-    embed.set_footer(text="Smart Garden System")
+    embed.add_field(
+        name="🌿 Status Meaning",
+        value=(
+            "💧 **Wet** = Low moisture\n"
+            "🌱 **Healthy** = Optimal range\n"
+            "🏜️ **Dry** = Needs watering"
+        ),
+        inline=False
+    )
+
+    embed.set_footer(text="Smart Garden • real-time irrigation monitoring")
 
     await ctx.send(embed=embed)
 
@@ -69,45 +79,57 @@ async def on_ready():
 
 
 # =========================
-# 💬 STATUS COMMAND
+# 💬 STATUS COMMAND (IMPROVED)
 # =========================
 @bot.command()
 async def status(ctx):
     data = get_bed_status()
 
     if not data:
-        await ctx.send("❌ Failed to fetch data from API")
+        await ctx.send("❌ Could not reach irrigation API.")
         return
 
     embed = discord.Embed(
         title="🌱 Smart Garden Status",
-        color=0x1abc9c
+        description="Live soil moisture readings",
+        color=0x3498db
     )
 
     active = []
 
     for bed_id, bed in data.items():
-        avg = bed["average"]
-        valve = bed["valve_state"]
+        avg = bed.get("average", 0)
+        valve = bed.get("valve_state", "UNKNOWN")
 
+        # Soil state
         if avg > 650:
-            state = "Dry"
+            state = "🏜️ Dry"
+            color = 0xe74c3c
         elif avg > 450:
-            state = "Healthy"
+            state = "🌱 Healthy"
+            color = 0x2ecc71
         else:
-            state = "Wet"
+            state = "💧 Wet"
+            color = 0x3498db
 
         embed.add_field(
-            name=f"{bed_id}",
-            value=f"💧 {avg:.1f} ({state}) | 🚰 {valve}",
-            inline=False
+            name=f"🌿 {bed_id}",
+            value=(
+                f"**Moisture:** `{avg:.1f}`\n"
+                f"**State:** {state}\n"
+                f"**Valve:** {'🚰 ON' if valve == 'ON' else '🔒 OFF'}"
+            ),
+            inline=True
         )
 
         if valve == "ON":
             active.append(bed_id)
 
-    footer_text = "Currently watering: " + ", ".join(active) if active else "No active watering"
-    embed.set_footer(text=footer_text)
+    # Footer summary
+    if active:
+        embed.set_footer(text=f"🚰 Watering: {', '.join(active)}")
+    else:
+        embed.set_footer(text="🟢 System idle — no watering active")
 
     await ctx.send(embed=embed)
 
