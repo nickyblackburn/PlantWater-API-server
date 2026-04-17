@@ -74,6 +74,7 @@ def check_watering(bed_id, avg):
                 "average_moisture": avg
             }
         )
+       
         return r.json()
     except:
         return None

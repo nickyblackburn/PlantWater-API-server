@@ -24,7 +24,11 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 # ============================================================
 # 🧠 APP SETUP & DATABASE CONFIGURATION
 # ============================================================g
-
+global_weather = {
+    "will_rain": False,
+    "raw": None,
+    "last_update": None
+}
 
 # Initialize FastAPI application with title and description
 app = FastAPI(title="Smart Irrigation System")
@@ -914,13 +918,20 @@ def get_weather(db=None):
         "last_update": now
     }
 
+    global_weather = {
+        "will_rain": will_rain,
+        "raw": data,
+        "last_update": datetime.utcnow()
+    }
+
+
     weather_cache["last_update"] = now
     weather_cache["data"] = result
-
+    print("weather WILL RAIN:", will_rain)
     return result
 @app.get("/api/weather")
 
 def weather_api():
-    return get_weather()
+    return global_weather
 
 
