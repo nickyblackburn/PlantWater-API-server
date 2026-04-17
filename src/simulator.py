@@ -5,7 +5,7 @@ from datetime import datetime
 
 SERVER = "http://127.0.0.1:8000"
 
-BEDS = ["bed_1", "bed_2", "bed_3"]
+BEDS = ["bed_1", "bed_2", "bed_3", "bed_4"]
 
 # 🌱 simulate soil state per bed
 soil_state = {

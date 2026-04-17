@@ -121,7 +121,7 @@ class BedConfigDB(Base):
     bed_id = Column(String, unique=True)
 
     # Moisture level threshold below which watering should be triggered (0-1023)
-    moisture_threshold = Column(Integer, default=450)
+    moisture_threshold = Column(Integer, default=600)
     
     # Duration in seconds to keep irrigation valve open
     watering_duration_sec = Column(Integer, default=3)
@@ -662,7 +662,7 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
         db.refresh(config)
 
  
-    soil_dry = average_moisture < config.moisture_threshold
+    soil_dry = average_moisture > config.moisture_threshold
     weather = current_weather()
     rain_expected = weather["is_raining_now"]
 
