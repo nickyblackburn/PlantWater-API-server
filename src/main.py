@@ -25,7 +25,7 @@ Base = declarative_base()
 # -----------------------------
 # 🌧️ WEATHER CONFIG
 # -----------------------------
-OPENWEATHER_API_KEY = "YOUR_API_KEY"
+OPENWEATHER_API_KEY = "e88c64c56baab21c5eeff4def1c026be"
 CITY = "Troy,US"
 
 weather_cache = {
