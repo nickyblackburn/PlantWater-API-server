@@ -233,7 +233,6 @@ def get_weather():
 
     result = {
         "will_rain": bool(will_rain),
-        "raw": data,
         "last_update": now.isoformat()
     }
 
