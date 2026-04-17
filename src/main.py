@@ -78,12 +78,11 @@ def get_db():
 # -----------------------------
 class BedData(BaseModel):
     bed_id: str
-    timestamp: datetime
-    sensors: List[int]
+    timestamp: str   # 👈 FIXED
+    sensors: List[float]
     average: float
     valve_state: str
     rssi: Optional[int] = None
-
 
 class BedConfig(BaseModel):
     moisture_threshold: Optional[int] = None
@@ -134,12 +133,12 @@ def receive_data(data: BedData, db: Session = Depends(get_db)):
 
     try:
         reading = BedReading(
-            bed_id=data.bed_id,
-            timestamp=datetime.fromisoformat(data.timestamp),
-            average=float(data.average),
-            valve_state=data.valve_state,
-            rssi=data.rssi,
-            sensors=[float(x) for x in data.sensors]
+        bed_id=data.bed_id,
+        timestamp=datetime.fromisoformat(data.timestamp),  # safe conversion
+        average=data.average,
+        valve_state=data.valve_state,
+        rssi=data.rssi,
+        sensors=data.sensors
         )
 
         db.add(reading)
