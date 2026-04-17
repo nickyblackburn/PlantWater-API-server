@@ -212,58 +212,31 @@ class BedConfig(BaseModel):
 # ============================================================
 
 def get_weather():
-    """
-    Fetch weather forecast data with intelligent caching.
-    
-    Queries OpenWeatherMap API to determine if rain is expected in the next
-    few hours. Implements 10-minute caching to minimize API calls and improve
-    response times.
-    
-    Returns:
-        dict: Contains 'will_rain' (bool) and 'raw' (full API response)
-        
-    Example:
-        >>> weather = get_weather()
-        >>> if weather["will_rain"]:
-        ...     skip_watering()
-    """
-    # Get current UTC time for cache validation
     now = datetime.utcnow()
 
-    # Check if we have cached data that's still fresh (less than 10 minutes old)
     if weather_cache["last_update"]:
         if now - weather_cache["last_update"] < timedelta(minutes=10):
-            # Return cached data without making API call
             return weather_cache["data"]
 
-    # Build API request URL with city and API key parameters
     url = (
         "https://api.openweathermap.org/data/2.5/forecast"
         f"?q={CITY}&appid={OPENWEATHER_API_KEY}&units=metric"
     )
 
-    # Make HTTP GET request to OpenWeather API
     r = requests.get(url)
     data = r.json()
 
-    # Initialize flag for rain prediction
-    will_rain = False
+    will_rain = any(
+        item.get("pop", 0) > 0.5
+        for item in data.get("list", [])[:6]
+    )
 
-    # Check first 6 forecast entries (~24 hours) for rain probability
-    # pop = probability of precipitation (value > 0.5 = 50% chance)
-    for item in data.get("list", [])[:6]:
-        if item.get("pop", 0) > 0.5:
-            # Rain is likely in the forecast
-            will_rain = True
-            break
-
-    # Prepare result object with rain prediction and full response data
     result = {
-        "will_rain": will_rain,
-        "raw": data
+        "will_rain": bool(will_rain),
+        "raw": data,
+        "last_update": now.isoformat()
     }
 
-    # Update cache with current timestamp and data
     weather_cache["last_update"] = now
     weather_cache["data"] = result
 
@@ -692,7 +665,7 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
  
     soil_dry = average_moisture < config.moisture_threshold
     weather = get_weather()
-    rain_expected = weather["will_rain"]
+    rain_expected = str(weather["will_rain"])
 
     return {
         "bed_id": bed_id,
@@ -890,48 +863,9 @@ def dashboard():
     </html>
     """
 
-def get_weather(db=None):
-    now = datetime.utcnow()
-
-    # cache
-    if weather_cache["last_update"]:
-        if now - weather_cache["last_update"] < timedelta(minutes=10):
-            return weather_cache["data"]
-
-    url = (
-        "https://api.openweathermap.org/data/2.5/forecast"
-        f"?q={CITY}&appid={OPENWEATHER_API_KEY}&units=metric"
-    )
-
-    r = requests.get(url)
-    data = r.json()
-
-    will_rain = any(
-        item.get("pop", 0) > 0.6 and
-        item.get("weather", [{}])[0].get("main") == "Rain"
-        for item in data.get("list", [])[:6]
-)
-
-    result = {
-        "will_rain": will_rain,
-        "raw": data,
-        "last_update": now
-    }
-
-    global_weather = {
-        "will_rain": will_rain,
-        "raw": data,
-        "last_update": datetime.utcnow()
-    }
-
-
-    weather_cache["last_update"] = now
-    weather_cache["data"] = result
-    print("weather WILL RAIN:", will_rain)
-    return result
 @app.get("/api/weather")
 
 def weather_api():
-    return global_weather
+    return get_weather()
 
 
