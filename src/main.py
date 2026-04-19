@@ -7,13 +7,17 @@
 
 # Import required libraries for FastAPI framework
 from fastapi import FastAPI, Depends
+
 # Import Pydantic for request/response validation
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+
 # Import type hints for better code clarity
 from typing import List, Optional, Dict
+
 # Import datetime utilities for timestamp handling and time calculations
 from datetime import datetime, timedelta
+
 # Import requests for external API calls (weather data)
 import requests
 
@@ -24,11 +28,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 # ============================================================
 # 🧠 APP SETUP & DATABASE CONFIGURATION
 # ============================================================g
-global_weather = {
-    "will_rain": False,
-    "raw": None,
-    "last_update": None
-}
+global_weather = {"will_rain": False, "raw": None, "last_update": None}
 
 active_valves = {}  # bed_id -> {"state": "ON/OFF", "until": datetime}
 
@@ -41,10 +41,7 @@ DATABASE_URL = "sqlite:///./database.db"
 
 # Create database engine with SQLite connection
 # check_same_thread=False allows multi-threaded access to SQLite
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False}
-)
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
 # Create session factory for database operations
 # autoflush=False: manual control over when changes are flushed
@@ -66,42 +63,44 @@ CITY = "Detroit,US"
 # Stores last update timestamp and weather data to implement caching logic
 weather_cache = {
     "last_update": None,  # Timestamp of last successful API call
-    "data": None          # Cached weather response data
+    "data": None,  # Cached weather response data
 }
 
 # ============================================================
 # 🌿 DATABASE MODELS (ORM)
 # ============================================================
 
+
 # BedReading: Records sensor data from a plant bed at specific timestamps
 # Each reading captures all sensors' measurements and system state
 class BedReading(Base):
     """
     ORM model for storing plant bed sensor readings.
-    
+
     Represents a single snapshot of sensor data from a plant bed,
     including moisture levels, valve state, and signal strength.
     """
+
     __tablename__ = "bed_readings"
 
     # Unique identifier for the reading
     id = Column(Integer, primary_key=True)
-    
+
     # Foreign key reference to plant bed (indexed for efficient queries)
     bed_id = Column(String, index=True)
 
     # Timestamp when sensor reading was captured (UTC)
     timestamp = Column(DateTime)
-    
+
     # Average moisture level across all sensors
     average = Column(Float)
-    
+
     # Current state of irrigation valve (e.g., "ON", "OFF", "COOLDOWN")
     valve_state = Column(String)
-    
+
     # Wireless signal strength indicator (WiFi RSSI in dBm)
     rssi = Column(Integer)
-    
+
     # JSON array of individual sensor readings (allows variable sensor count)
     sensors = Column(JSON)
 
@@ -111,27 +110,28 @@ class BedReading(Base):
 class BedConfigDB(Base):
     """
     ORM model for storing plant bed configuration settings.
-    
+
     Manages configurable parameters for the automated irrigation system,
     such as moisture thresholds and valve timing settings.
     """
+
     __tablename__ = "bed_config"
 
     # Unique identifier for the configuration
     id = Column(Integer, primary_key=True)
-    
+
     # Unique plant bed identifier (unique constraint ensures one config per bed)
     bed_id = Column(String, unique=True)
 
     # Moisture level threshold below which watering should be triggered (0-1023)
     moisture_threshold = Column(Integer, default=600)
-    
+
     # Duration in seconds to keep irrigation valve open
     watering_duration_sec = Column(Integer, default=3)
-    
+
     # Cooldown period in seconds before next watering cycle can begin
     cooldown_sec = Column(Integer, default=30)
-    
+
     # Interval in seconds between consecutive sensor readings
     sampling_interval_sec = Column(Integer, default=10)
 
@@ -139,16 +139,17 @@ class BedConfigDB(Base):
 # Create all defined tables in the database (if they don't exist)
 Base.metadata.create_all(bind=engine)
 
+
 # -----------------------------
 # 🐶 DB DEPENDENCY
 # -----------------------------
 def get_db():
     """
     Dependency function to provide database session to route handlers.
-    
+
     Creates a new database session for each request, ensuring proper
     resource management with automatic cleanup in a finally block.
-    
+
     Yields:
         Session: SQLAlchemy session for database operations
     """
@@ -159,33 +160,36 @@ def get_db():
         # Always close the session, even if an error occurs
         db.close()
 
+
 # ============================================================
 # 📡 REQUEST/RESPONSE DATA MODELS (PYDANTIC)
 # ============================================================
+
 
 # BedData: Schema for incoming sensor data from ESP32 microcontroller
 class BedData(BaseModel):
     """
     Pydantic model for validating incoming sensor readings from ESP32.
-    
+
     Defines the structure and types of data received from plant bed sensors,
     including moisture readings, valve state, and network signal strength.
     """
+
     # Unique identifier for the plant bed
     bed_id: str
-    
+
     # ISO format timestamp of when reading was captured
-    timestamp: str   # ISO format string (e.g., "2026-04-17T10:30:00")
-    
+    timestamp: str  # ISO format string (e.g., "2026-04-17T10:30:00")
+
     # Array of individual sensor readings (moisture values)
     sensors: List[float]
-    
+
     # Calculated average moisture level across all sensors
     average: float
-    
+
     # Current state of irrigation valve control
     valve_state: str
-    
+
     # Optional: WiFi signal strength in dBm (typically -100 to -30)
     rssi: Optional[int] = None
 
@@ -194,25 +198,28 @@ class BedData(BaseModel):
 class BedConfig(BaseModel):
     """
     Pydantic model for updating plant bed configuration settings.
-    
+
     Allows partial updates to watering logic parameters.
     All fields are optional to support patch-style updates.
     """
+
     # Moisture threshold below which watering is triggered (optional update)
     moisture_threshold: Optional[int] = None
-    
+
     # Duration to run irrigation valve (optional update)
     watering_duration_sec: Optional[int] = None
-    
+
     # Cooldown period between watering cycles (optional update)
     cooldown_sec: Optional[int] = None
-    
+
     # Interval between sensor readings (optional update)
     sampling_interval_sec: Optional[int] = None
+
 
 # ============================================================
 # 🌧️ WEATHER DATA RETRIEVAL & CACHING
 # ============================================================
+
 
 def get_weather():
     now = datetime.utcnow()
@@ -228,35 +235,31 @@ def get_weather():
 
     r = requests.get(url)
     data = r.json()
-    
-    will_rain = any(
-        item.get("pop", 0) > 0.5
-        for item in data.get("list", [])[:6]
-    )
 
-    result = {
-        "will_rain": bool(will_rain),
-        "last_update": now.isoformat()
-    }
+    will_rain = any(item.get("pop", 0) > 0.5 for item in data.get("list", [])[:6])
+
+    result = {"will_rain": bool(will_rain), "last_update": now.isoformat()}
 
     weather_cache["last_update"] = now
     weather_cache["data"] = result
 
     return result
 
+
 # ============================================================
 # 📡 SENSOR DATA INGESTION ENDPOINT
 # ============================================================
+
 
 @app.post("/api/bed-data")
 def receive_data(data: BedData, db: Session = Depends(get_db)):
     """
     Accept and store sensor readings from ESP32 microcontroller.
-    
+
     Receives moisture sensor data, valve state, and network metrics from
     a plant bed's ESP32 controller and persists it to the database for
     historical analysis and real-time monitoring.
-    
+
     Args:
         data (BedData): Validated sensor reading payload containing:
             - bed_id: Identifier of the plant bed
@@ -266,10 +269,10 @@ def receive_data(data: BedData, db: Session = Depends(get_db)):
             - valve_state: Valve control state
             - rssi: WiFi signal strength (optional)
         db (Session): Database session from dependency injection
-    
+
     Returns:
         dict: Status response indicating success or error details
-        
+
     Example:
         POST /api/bed-data
         {
@@ -289,7 +292,7 @@ def receive_data(data: BedData, db: Session = Depends(get_db)):
             average=data.average,
             valve_state=data.valve_state,
             rssi=data.rssi,
-            sensors=data.sensors
+            sensors=data.sensors,
         )
 
         # Add reading to session and commit to database
@@ -301,28 +304,28 @@ def receive_data(data: BedData, db: Session = Depends(get_db)):
 
     except Exception as e:
         # Return error details if insertion fails
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+        return {"status": "error", "message": str(e)}
+
+
 # ============================================================
 # 📊 RETRIEVE LATEST SENSOR STATE FOR ALL BEDS
 # ============================================================
+
 
 @app.get("/api/beds")
 def get_beds(db: Session = Depends(get_db)):
     """
     Retrieve the latest sensor reading for each plant bed.
-    
+
     Queries the database to get the most recent reading from each bed,
     providing a real-time snapshot of the entire irrigation system state.
-    
+
     Args:
         db (Session): Database session from dependency injection
-    
+
     Returns:
         dict: Mapping of bed_id to latest reading data
-        
+
     Example response:
         {
             "bed_001": {
@@ -337,7 +340,7 @@ def get_beds(db: Session = Depends(get_db)):
     """
     # Dictionary to store latest reading per bed
     beds = {}
-    
+
     # Query all readings ordered by timestamp (newest first)
     rows = db.query(BedReading).order_by(BedReading.timestamp.desc()).all()
 
@@ -357,26 +360,28 @@ def get_beds(db: Session = Depends(get_db)):
 
     return beds
 
+
 # ============================================================
 # 🌿 RETRIEVE HISTORICAL SENSOR DATA
 # ============================================================
+
 
 @app.get("/api/beds/{bed_id}/history")
 def history(bed_id: str, db: Session = Depends(get_db)):
     """
     Retrieve recent historical readings for a specific plant bed.
-    
+
     Returns up to the last 100 readings for a bed, sorted chronologically
     in descending order (newest first). Useful for inspecting recent
     behavior and trends.
-    
+
     Args:
         bed_id (str): Identifier of the plant bed to query
         db (Session): Database session from dependency injection
-    
+
     Returns:
         list: Array of reading objects with timestamp, moisture, valve state, and sensors
-        
+
     Example:
         GET /api/beds/bed_001/history
         [
@@ -404,38 +409,37 @@ def history(bed_id: str, db: Session = Depends(get_db)):
             "timestamp": r.timestamp,
             "average": r.average,
             "valve_state": r.valve_state,
-            "sensors": r.sensors
+            "sensors": r.sensors,
         }
         for r in rows
     ]
+
 
 # ============================================================
 # 📊 TIME RANGE QUERY (FOR ADVANCED ANALYSIS)
 # ============================================================
 
+
 @app.get("/api/beds/{bed_id}/range")
 def get_range(
-    bed_id: str,
-    start: datetime,
-    end: datetime,
-    db: Session = Depends(get_db)
+    bed_id: str, start: datetime, end: datetime, db: Session = Depends(get_db)
 ):
     """
     Retrieve sensor readings within a specific time range.
-    
+
     Allows querying a bed's data between two timestamps, useful for
     generating reports, analyzing specific periods, or graphing data
     with custom time windows.
-    
+
     Args:
         bed_id (str): Identifier of the plant bed to query
         start (datetime): Start of time range (inclusive, ISO format)
         end (datetime): End of time range (inclusive, ISO format)
         db (Session): Database session from dependency injection
-    
+
     Returns:
         list: Readings within the time range, sorted chronologically ascending
-        
+
     Example:
         GET /api/beds/bed_001/range?start=2026-04-16T00:00:00&end=2026-04-17T00:00:00
     """
@@ -460,27 +464,29 @@ def get_range(
         for r in rows
     ]
 
+
 # ============================================================
 # 📈 OPTIMIZED GRAPH DATA ENDPOINT
 # ============================================================
+
 
 @app.get("/api/beds/{bed_id}/graph")
 def graph_data(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
     """
     Retrieve sensor data formatted for frontend charting libraries.
-    
+
     Returns readings in a denormalized format (arrays of timestamps, averages,
     and valve states) that's directly compatible with JavaScript charting
     libraries like Chart.js or Plotly.
-    
+
     Args:
         bed_id (str): Identifier of the plant bed to query
         limit (int): Maximum number of recent readings to return (default: 200)
         db (Session): Database session from dependency injection
-    
+
     Returns:
         dict: Contains separate arrays for timestamps, moisture averages, and valve states
-        
+
     Example response:
         {
             "timestamps": ["2026-04-17T10:00:00", "2026-04-17T10:10:00", ...],
@@ -508,26 +514,28 @@ def graph_data(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
         "valve": [r.valve_state for r in rows],
     }
 
+
 # ============================================================
 # 📊 STATISTICAL ANALYSIS ENDPOINT
 # ============================================================
+
 
 @app.get("/api/beds/{bed_id}/stats")
 def stats(bed_id: str, db: Session = Depends(get_db)):
     """
     Calculate aggregated statistics for a plant bed's moisture data.
-    
+
     Computes summary statistics (count, min, max, average, latest) across
     all historical readings to provide insights into soil conditions and
     watering patterns.
-    
+
     Args:
         bed_id (str): Identifier of the plant bed to analyze
         db (Session): Database session from dependency injection
-    
+
     Returns:
         dict: Contains count, min, max, avg, and last moisture readings
-        
+
     Example response:
         {
             "count": 1250,
@@ -549,32 +557,34 @@ def stats(bed_id: str, db: Session = Depends(get_db)):
 
     # Calculate and return statistical summary
     return {
-        "count": len(vals),           # Total number of readings
-        "min": min(vals),              # Driest reading
-        "max": max(vals),              # Wettest reading
+        "count": len(vals),  # Total number of readings
+        "min": min(vals),  # Driest reading
+        "max": max(vals),  # Wettest reading
         "avg": sum(vals) / len(vals),  # Mean moisture level
-        "last": vals[-1]               # Most recent reading
+        "last": vals[-1],  # Most recent reading
     }
+
 
 # ============================================================
 # ⚙️ CONFIGURATION MANAGEMENT - RETRIEVE SETTINGS
 # ============================================================
 
+
 @app.get("/api/config/{bed_id}")
 def get_config(bed_id: str, db: Session = Depends(get_db)):
     """
     Retrieve current configuration settings for a plant bed.
-    
+
     Returns the customized watering parameters for a bed. If no configuration
     exists, creates and returns default settings for future use.
-    
+
     Args:
         bed_id (str): Identifier of the plant bed
         db (Session): Database session from dependency injection
-    
+
     Returns:
         dict: Configuration parameters including thresholds and timings
-        
+
     Example response:
         {
             "bed_id": "bed_001",
@@ -603,27 +613,29 @@ def get_config(bed_id: str, db: Session = Depends(get_db)):
         "sampling_interval_sec": config.sampling_interval_sec,
     }
 
+
 # ============================================================
 # ⚙️ CONFIGURATION MANAGEMENT - UPDATE SETTINGS
 # ============================================================
+
 
 @app.post("/api/config/{bed_id}")
 def update_config(bed_id: str, config: BedConfig, db: Session = Depends(get_db)):
     """
     Update configuration settings for a plant bed.
-    
+
     Allows partial updates to watering logic parameters. Only provided
     fields are updated, leaving others unchanged. Automatically creates
     a new configuration if one doesn't exist.
-    
+
     Args:
         bed_id (str): Identifier of the plant bed
         config (BedConfig): Configuration updates (all fields optional)
         db (Session): Database session from dependency injection
-    
+
     Returns:
         dict: Status confirmation
-        
+
     Example request:
         POST /api/config/bed_001
         {
@@ -648,6 +660,7 @@ def update_config(bed_id: str, config: BedConfig, db: Session = Depends(get_db))
     db.commit()
 
     return {"status": "updated"}
+
 
 # ============================================================
 # 🌧️ INTELLIGENT WATERING DECISION ENGINE
@@ -675,15 +688,12 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
     if water:
         active_valves[bed_id] = {
             "state": "ON",
-            "until": now + timedelta(seconds=config.watering_duration_sec)
+            "until": now + timedelta(seconds=config.watering_duration_sec),
         }
     else:
         # optional safety turn-off logic
         if bed_id not in active_valves:
-            active_valves[bed_id] = {
-                "state": "OFF",
-                "until": now
-            }
+            active_valves[bed_id] = {"state": "OFF", "until": now}
 
     return {
         "bed_id": bed_id,
@@ -691,23 +701,26 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
         "soil_dry": soil_dry,
         "rain_expected": rain_expected,
         "weather": weather,
-        "valve_state": active_valves.get(bed_id, {}).get("state", "OFF")
+        "valve_state": active_valves.get(bed_id, {}).get("state", "OFF"),
     }
+
+
 # ============================================================
 # 🧪 SYSTEM HEALTH & MAINTENANCE ENDPOINTS
 # ============================================================
+
 
 @app.get("/health")
 def health():
     """
     Health check endpoint for monitoring service availability.
-    
+
     Simple endpoint used by load balancers and monitoring tools to verify
     that the API is running and responding to requests.
-    
+
     Returns:
         dict: Status indicator
-        
+
     Example:
         GET /health
         {"status": "alive"}
@@ -719,17 +732,17 @@ def health():
 def cleanup(db: Session = Depends(get_db)):
     """
     Delete historical data older than 7 days.
-    
+
     Maintenance endpoint to prevent database from growing unbounded.
     Removes readings older than one week to manage storage while keeping
     recent data for analysis and monitoring.
-    
+
     Args:
         db (Session): Database session from dependency injection
-    
+
     Returns:
         dict: Status confirmation
-        
+
     Note:
         Should be called periodically (e.g., via a cron job or scheduler)
         to maintain optimal database performance.
@@ -742,6 +755,7 @@ def cleanup(db: Session = Depends(get_db)):
     db.commit()
 
     return {"status": "cleaned"}
+
 
 @app.get("/api/beds/latest")
 def latest(db: Session = Depends(get_db)):
@@ -765,13 +779,15 @@ def latest(db: Session = Depends(get_db)):
                 "bed_id": r.bed_id,
                 "average": r.average,
                 "valve_state": valve_state,
-                "timestamp": r.timestamp
+                "timestamp": r.timestamp,
             }
 
     return seen
 
+
 # ============================================================
 # Webapp for ddisplaying data and testing API)
+
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
@@ -981,6 +997,7 @@ setInterval(updateGraph, 3000);
 # 📖 ABOUT PAGE
 # ============================================================
 
+
 @app.get("/about", response_class=HTMLResponse)
 def about_page():
     return """
@@ -1162,12 +1179,10 @@ Dashboard UI (Chart.js)
 """
 
 
-
-
 @app.get("/api/will-rain")
-
 def weather_api():
     return get_weather()
+
 
 @app.get("/api/weather/current")
 def current_weather():
@@ -1196,7 +1211,6 @@ def current_weather():
     }
 
 
-
 @app.post("/api/water")
 def water_bed(bed_id: str, duration: int = 3):
     """
@@ -1204,16 +1218,10 @@ def water_bed(bed_id: str, duration: int = 3):
     """
 
     now = datetime.utcnow()
-    active_valves[bed_id] = {
-        "state": "ON",
-        "until": now + timedelta(seconds=duration)
-    }
+    active_valves[bed_id] = {"state": "ON", "until": now + timedelta(seconds=duration)}
 
-    return {
-        "bed_id": bed_id,
-        "valve_state": "ON",
-        "duration": duration
-    }
+    return {"bed_id": bed_id, "valve_state": "ON", "duration": duration}
+
 
 @app.get("/api/valve/{bed_id}")
 def valve_status(bed_id: str):
@@ -1229,3 +1237,4 @@ def valve_status(bed_id: str):
         return {"bed_id": bed_id, "valve_state": "OFF"}
 
     return {"bed_id": bed_id, "valve_state": "ON"}
+
