@@ -25,6 +25,9 @@ import requests
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, JSON
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
+from sklearn.ensemble import RandomForestClassifier
+import numpy as np
+
 # ============================================================
 # 🧠 APP SETUP & DATABASE CONFIGURATION
 # ============================================================g
@@ -1238,3 +1241,61 @@ def valve_status(bed_id: str):
 
     return {"bed_id": bed_id, "valve_state": "ON"}
 
+
+#################################################################
+# Ai Prediction Endpoint (for future ML integration)    
+#################################################################
+
+model = RandomForestClassifier()
+
+# ---------------------------------
+# TRAINING DATA BUILDER (REAL ONLY)
+# ---------------------------------
+def build_dataset(db):
+    rows = db.query(BedReading).all()
+
+    X = []
+    y = []
+
+    for r in rows:
+        weather = get_weather()
+
+        X.append([
+            r.average,
+            weather["will_rain"],
+            r.rssi if r.rssi else -70
+        ])
+
+        # label = what your system DID (real outcome)
+        y.append(1 if r.valve_state == "ON" else 0)
+
+    return np.array(X), np.array(y)
+
+
+
+@app.post("/api/ml/train")
+def train_model(db: Session = Depends(get_db)):
+    X, y = build_dataset(db)
+
+    model.fit(X, y)
+
+    return {"status": "trained", "samples": len(X)}
+
+
+@app.post("/api/ml/predict")
+def predict(bed_id: str, average: float):
+
+    weather = get_weather()
+
+    features = np.array([[
+        average,
+        weather["will_rain"],
+        -65  # placeholder RSSI or real sensor later
+    ]])
+
+    prediction = model.predict(features)[0]
+
+    return {
+        "water": bool(prediction),
+        "confidence_model": "rf_v1"
+    }
