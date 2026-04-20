@@ -1,61 +1,60 @@
 import requests
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 SERVER = "http://127.0.0.1:8000"
 
 BEDS = ["bed_1", "bed_2", "bed_3", "bed_4"]
 
-# 🌱 simulate soil state per bed
 soil_state = {
-    "bed_1": random.random() * 600 + 200,  # start with random moisture between 200-800
-    "bed_2": random.random() * 600 + 200,
-    "bed_3": random.random() * 600 + 200,
-    "bed_4": random.random() * 600 + 200,
+    bed: random.uniform(300, 700)
+    for bed in BEDS
 }
+
+# 💧 track irrigation "active watering"
+watering_state = {
+    bed: None  # stores end time if watering
+    for bed in BEDS
+}
+
 
 def simulate_sensor(bed_id):
     """
-    fake soil behavior:
-    - slowly dries out
-    - watering increases moisture
+    soil slowly dries + irrigation slowly raises it
     """
 
     base = soil_state[bed_id]
 
-    # 🌿 natural drying over time
-    base -= random.uniform(1, 5)
+    # 🌵 drying effect
+    base -= random.uniform(0.5, 3)
 
-    # 💧 noise
-    noise = random.uniform(-10, 10)
+    # 💧 if watering is active, gently increase moisture
+    now = datetime.utcnow()
+    if watering_state[bed_id] and now < watering_state[bed_id]:
+        base += random.uniform(5, 15)
 
-    value = base + noise
+    # noise
+    value = base + random.uniform(-5, 5)
 
-    # clamp
-    value = max(200, min(800, value))
+    value = max(200, min(850, value))
 
     soil_state[bed_id] = value
 
-    # simulate 5 sensors per bed
-    sensors = [
-        value + random.uniform(-20, 20)
-        for _ in range(5)
-    ]
-
+    sensors = [value + random.uniform(-15, 15) for _ in range(5)]
     avg = sum(sensors) / len(sensors)
 
     return sensors, avg
 
 
-def send_data(bed_id, sensors, avg):
+def send_data(bed_id, sensors, avg, valve_state):
     payload = {
-    "bed_id": bed_id,
-    "timestamp": datetime.utcnow().isoformat(),
-    "sensors": [float(x) for x in sensors],
-    "average": float(avg),
-    "valve_state": "OFF",
-    "rssi": -50
+        "bed_id": bed_id,
+        "timestamp": datetime.utcnow().isoformat(),
+        "sensors": [float(x) for x in sensors],
+        "average": float(avg),
+        "valve_state": valve_state,
+        "rssi": -50
     }
 
     try:
@@ -75,7 +74,6 @@ def check_watering(bed_id, avg):
                 "average_moisture": avg
             }
         )
-            
         return r.json()
     except:
         return None
@@ -83,33 +81,43 @@ def check_watering(bed_id, avg):
 
 def apply_watering_effect(bed_id, decision):
     """
-    if server says water → increase soil moisture
+    when watering happens, simulate duration
     """
 
     if decision and decision.get("water"):
-        soil_state[bed_id] += random.uniform(40, 100)
+
+        duration = 3  # match your backend default
+
+        watering_state[bed_id] = datetime.utcnow() + timedelta(seconds=duration)
+
+        print(f"💧 {bed_id} watering for {duration}s")
 
 
 def run():
     print("🌿 irrigation simulator starting...")
 
     while True:
+
         for bed in BEDS:
 
             sensors, avg = simulate_sensor(bed)
-
-            send_data(bed, sensors, avg)
 
             decision = check_watering(bed, avg)
 
             if decision:
                 apply_watering_effect(bed, decision)
 
-                print(
-                    f"{bed} | avg={avg:.1f} | "
-                    f"water={decision['water']} | "
-                    f"rain={decision['rain_expected']}"
-                )
+            # 🚰 correct valve state reporting
+            now = datetime.utcnow()
+            valve = "ON" if watering_state[bed] and now < watering_state[bed] else "OFF"
+
+            send_data(bed, sensors, avg, valve)
+
+            print(
+                f"{bed} | avg={avg:.1f} | "
+                f"valve={valve} | "
+                f"water={decision.get('water') if decision else None}"
+            )
 
         time.sleep(2)
 
