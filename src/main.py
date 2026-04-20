@@ -101,6 +101,10 @@ class BedReading(Base):
     # Current state of irrigation valve (e.g., "ON", "OFF", "COOLDOWN")
     valve_state = Column(String)
 
+
+    #weather data at time of reading (optional, can be null if API call fails)
+    weather = Column(JSON, nullable=True)
+
     # Wireless signal strength indicator (WiFi RSSI in dBm)
     rssi = Column(Integer)
 
@@ -186,6 +190,7 @@ class BedData(BaseModel):
 
     # Array of individual sensor readings (moisture values)
     sensors: List[float]
+    
 
     # Calculated average moisture level across all sensors
     average: float
@@ -289,6 +294,8 @@ def receive_data(data: BedData, db: Session = Depends(get_db)):
     """
     try:
         # Create ORM object from validated request data
+        weather = current_weather()
+
         reading = BedReading(
             bed_id=data.bed_id,
             timestamp=datetime.fromisoformat(data.timestamp),  # Parse ISO timestamp
@@ -296,6 +303,7 @@ def receive_data(data: BedData, db: Session = Depends(get_db)):
             valve_state=data.valve_state,
             rssi=data.rssi,
             sensors=data.sensors,
+            weather=weather  
         )
 
         # Add reading to session and commit to database
@@ -853,6 +861,8 @@ def dashboard():
         <canvas id="chart"></canvas>
     </div>
 
+    
+
 </div>
 <!-- FOOTER -->
 <footer class="text-center text-muted mt-5 py-3 border-top border-secondary">
@@ -1181,6 +1191,106 @@ Dashboard UI (Chart.js)
 </html>
 """
 
+#########################################
+# Per bed Display of latest reading and valve state
+#########################################
+@app.get("/health-dashboard", response_class=HTMLResponse)
+def garden_health_page():
+    return """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>🌿 Garden Health</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            background: #0f1115;
+            color: #ffffff;
+        }
+
+        .card {
+            background: #1b1f2a;
+            border: 1px solid #2a2f3a;
+        }
+
+        .healthy { color: #00ff9a; }
+        .dry { color: #ff5c5c; }
+        .wet { color: #4da6ff; }
+
+        .glow {
+            text-shadow: 0 0 10px rgba(0,255,154,0.4);
+        }
+    </style>
+</head>
+
+<body>
+<div class="container py-5">
+
+    <h1 class="glow mb-4">🌿 Garden Health Dashboard</h1>
+
+    <div id="healthContainer" class="row"></div>
+
+    <div class="text-center mt-4">
+        <a href="/" class="btn btn-outline-light">← Back</a>
+    </div>
+
+</div>
+
+<script>
+
+/* =========================
+   🌿 LOAD FULL HEALTH DATA
+========================= */
+async function loadHealth() {
+    const bedsRes = await fetch('/api/beds');
+    const beds = await bedsRes.json();
+
+    let html = "";
+
+    for (const bed in beds) {
+        const statsRes = await fetch(`/api/beds/${bed}/stats`);
+        const stats = await statsRes.json();
+
+        if (stats.error) continue;
+
+        let status = "Healthy";
+        let statusClass = "healthy";
+
+        if (stats.avg > 700) {
+            status = "Too Dry";
+            statusClass = "dry";
+        } else if (stats.avg < 300) {
+            status = "Too Wet";
+            statusClass = "wet";
+        }
+
+        html += `
+        <div class="col-md-4">
+            <div class="card p-3 mb-4">
+                <h4>${bed}</h4>
+                <p>Avg Moisture: ${stats.avg.toFixed(1)}</p>
+                <p>Min: ${stats.min.toFixed(1)}</p>
+                <p>Max: ${stats.max.toFixed(1)}</p>
+                <p>Readings: ${stats.count}</p>
+                <h5 class="${statusClass}">${status}</h5>
+            </div>
+        </div>
+        `;
+    }
+
+    document.getElementById("healthContainer").innerHTML = html;
+}
+
+loadHealth();
+setInterval(loadHealth, 10000);
+
+</script>
+
+</body>
+</html>
+"""
 
 @app.get("/api/will-rain")
 def weather_api():
@@ -1261,4 +1371,28 @@ def get_mode(bed_id: str):
     return {
         "bed_id": bed_id,
         "mode": active_valves.get(bed_id, {}).get("mode", "normal")
+    }
+
+
+# graphs the full beds 
+@app.get("/api/beds/{bed_id}/full-graph")
+def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
+
+    rows = (
+        db.query(BedReading)
+        .filter(BedReading.bed_id == bed_id)
+        .order_by(BedReading.timestamp.desc())
+        .limit(limit)
+        .all()
+    )
+
+    rows.reverse()
+
+    return {
+        "timestamps": [r.timestamp for r in rows],
+        "moisture": [r.average for r in rows],
+        "valve": [1 if r.valve_state == "ON" else 0 for r in rows],
+        "temp": [r.weather["temp"] if r.weather else None for r in rows],
+        "humidity": [r.weather["humidity"] if r.weather else None for r in rows],
+        "rain": [1 if r.weather and r.weather["is_raining_now"] else 0 for r in rows],
     }

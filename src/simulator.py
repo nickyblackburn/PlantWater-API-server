@@ -9,10 +9,10 @@ BEDS = ["bed_1", "bed_2", "bed_3", "bed_4"]
 
 # 🌱 simulate soil state per bed
 soil_state = {
-    "bed_1": 706,
-    "bed_2": 80,
-    "bed_3": 450,
-    "bed_4": 550,
+    "bed_1": random.random() * 600 + 200,  # start with random moisture between 200-800
+    "bed_2": random.random() * 600 + 200,
+    "bed_3": random.random() * 600 + 200,
+    "bed_4": random.random() * 600 + 200,
 }
 
 def simulate_sensor(bed_id):
