@@ -795,121 +795,147 @@ def latest(db: Session = Depends(get_db)):
 
     return seen
 
-
-# ============================================================
-# Webapp for ddisplaying data and testing API)
-
-
+#################################
+# main entry point for running the API server
+###################################
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
     return """
 <!DOCTYPE html>
 <html>
 <head>
+<title>🌱 Smart Garden Control Panel</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
 <style>
-@keyframes valvePulse {
-    0%   { box-shadow: 0 0 0 rgba(0,255,120,0.0); transform: scale(1); }
-    50%  { box-shadow: 0 0 18px rgba(0,255,120,0.8); transform: scale(1.02); }
-    100% { box-shadow: 0 0 0 rgba(0,255,120,0.0); transform: scale(1); }
+body {
+    background:#0f1115;
+    color:white;
 }
 
-.valve-on {
-    border: 2px solid #00ff78;
-    animation: valvePulse 1s infinite;
+.card {
+    background:#1b1f2a;
+    border:1px solid #2a2f3a;
 }
 
-.valve-off {
-    border: 2px solid #444;
-    opacity: 0.7;
+.navbar {
+    background:black;
+    border-bottom:1px solid #2a2f3a;
+}
+
+.status-good { color:#00ff9a; font-weight:bold; }
+.status-warn { color:#ffcc00; font-weight:bold; }
+.status-bad  { color:#ff4d4d; font-weight:bold; }
+
+.small {
+    font-size:12px;
+    color:#9aa4b2;
 }
 </style>
-    <title>🌱 Smart Garden</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<nav class="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-secondary">
+
+<body>
+
+<!-- NAVBAR -->
+<nav class="navbar navbar-expand-lg navbar-dark">
   <div class="container-fluid">
 
     <a class="navbar-brand" href="/">🌱 Smart Garden</a>
 
     <div class="navbar-nav">
       <a class="nav-link" href="/">Dashboard</a>
-      <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
+      <a class="nav-link" href="/health-dashboard">Intelligence</a>
       <a class="nav-link" href="/about">About</a>
     </div>
 
   </div>
 </nav>
-<body class="bg-dark text-light">
+
 <div class="container py-4">
 
-    <h1 class="mb-4">🌱 Smart Garden Dashboard</h1>
+<h2 class="mb-3">🌿 Garden Control Panel</h2>
 
-    <!-- WEATHER -->
-    <div class="row my-3">
-        <div class="col">
-            <div id="weather" class="alert alert-info">
-                Loading weather...
-            </div>
-        </div>
-    </div>
-
-    <!-- STATS -->
-    <div class="row my-3">
-    <div class="col">
-        <div id="wateringStatus" class="alert alert-dark">
-            💤 No active watering
-        </div>
-    </div>
-</div>
-    
-    <!-- BEDS -->
-    <div class="row" id="beds">
-    </div>
-    
-
-    <!-- GRAPH -->
-    <div class="mt-4">
-        <canvas id="chart"></canvas>
-    </div>
-
-    
-
-</div>
-<!-- FOOTER -->
-<footer class="text-center text-muted mt-5 py-3 border-top border-secondary">
-   <div class="text-white text-center mt-4">
-        🌱 Smart Garden System · Made with 💚 by Nicky Blackburn
+<!-- WEATHER -->
+<div id="weather" class="alert alert-info">
+Loading weather...
 </div>
 
-    <a href="/about" class="btn btn-sm btn-outline-light mt-2">
-    About This Project</a>
-    </button>
-</footer>
+<!-- BEDS -->
+<div class="row" id="beds"></div>
+
+</div>
 
 <script>
 
-let moistureChart = null;
+/* =========================
+   WEATHER (LIGHT CACHE SAFE)
+========================= */
+async function loadWeather() {
+    const res = await fetch('/api/weather');
+    const data = await res.json();
+
+    document.getElementById("weather").innerText =
+        data.will_rain
+            ? "🌧 Rain expected soon"
+            : "☀ Stable conditions";
+}
 
 /* =========================
-   🧺 LOAD BEDS
+   STATUS LOGIC
+========================= */
+function getStatus(avg) {
+    if (avg > 700) return { text:"DRY", cls:"status-bad" };
+    if (avg < 300) return { text:"WET", cls:"status-warn" };
+    return { text:"HEALTHY", cls:"status-good" };
+}
+
+/* =========================
+   MAIN DASHBOARD LOAD
 ========================= */
 async function loadBeds() {
-    const res = await fetch('/api/beds/latest');
-    const data = await res.json();
-    
+
+    const latest = await fetch('/api/beds/latest').then(r => r.json());
 
     let html = "";
 
-    for (const bed in data) {
-        const b = data[bed];
+    for (const bed in latest) {
+
+        const b = latest[bed];
+
+        // lifetime stats per bed
+        const life = await fetch(`/api/beds/${bed}/lifetime`).then(r => r.json());
+
+        const status = getStatus(b.average);
 
         html += `
-        <div class="col-md-4">
-            <div class="card bg-secondary text-white p-3 mb-3">
+        <div class="col-md-4 mb-3">
+            <div class="card p-3">
+
                 <h5>${b.bed_id}</h5>
-                <p>💧 ${b.average.toFixed(1)}</p>
-                <p>🚰 ${b.valve_state}</p>
+
+                <p class="${status.cls}">
+                    ${status.text}
+                </p>
+
+                <p>💧 Moisture: ${b.average.toFixed(1)}</p>
+
+                <p>🚰 Valve: ${b.valve_state}</p>
+
+                <hr>
+
+                <p>🌊 Water Cycles: <b>${life.times_watered || 0}</b></p>
+
+                <p>⏱ Total Watering: <b>${life.total_watering_minutes || 0} min</b></p>
+
+                <p class="small">
+                    Last watered: ${
+                        life.last_watered
+                            ? new Date(life.last_watered).toLocaleString()
+                            : "Never"
+                    }
+                </p>
+
             </div>
         </div>
         `;
@@ -919,106 +945,20 @@ async function loadBeds() {
 }
 
 /* =========================
-   🌧 WEATHER
-========================= */
-async function loadWeather() {
-    const res = await fetch('/api/weather');
-    const data = await res.json();
-
-    const msg = data.will_rain
-        ? "🌧 Rain expected"
-        : "☀ No rain";
-
-    document.getElementById("weather").innerText = msg;
-}
-
-/* =========================
-   📈 INIT GRAPH
-========================= */
-async function initGraph() {
-    const res = await fetch('/api/beds/bed_1/graph');
-    const data = await res.json();
-
-    const ctx = document.getElementById('chart');
-
-    moistureChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: data.timestamps,
-            datasets: [{
-                label: 'Moisture',
-                data: data.average,
-                borderWidth: 2,
-                tension: 0.3
-            }]
-        }
-    });
-}
-
-/* =========================
-   🔄 UPDATE GRAPH
-========================= */
-async function updateGraph() {
-    if (!moistureChart) return;
-
-    const res = await fetch('/api/beds/bed_1/graph');
-    const data = await res.json();
-
-    moistureChart.data.labels = data.timestamps;
-    moistureChart.data.datasets[0].data = data.average;
-
-    moistureChart.update();
-}
-
-/* ++++++++++++++++++++++++++++++++++
-    🚰 UPDATE WATERING STATUS
-++++++++++++++++++++++++++++++++++ */
-async function loadWateringStatus() {
-    const res = await fetch('/api/beds/latest');
-    const data = await res.json();
-
-    let active = [];
-
-    for (const bed in data) {
-        if (data[bed].valve_state === "ON") {
-            active.push(bed);
-        }
-    }
-
-    const el = document.getElementById("wateringStatus");
-
-    if (active.length === 0) {
-        el.className = "alert alert-dark";
-        el.innerText = "💤 No active watering";
-        return;
-    }
-
-    el.className = "alert alert-success";
-
-    el.innerText =
-        "🚰 Watering active: " +
-        active.join(", ");
-}
-/* =========================
-   🚀 START
+   START LOOP
 ========================= */
 loadBeds();
 loadWeather();
-initGraph();
 
-/* refresh loops */
 setInterval(loadBeds, 3000);
 setInterval(loadWeather, 10000);
-setInterval(updateGraph, 3000);
 
 </script>
 
 </body>
 </html>
 """
-
-
-# ============================================================
+#=======================================================
 # 📖 ABOUT PAGE
 # ============================================================
 
@@ -1555,4 +1495,50 @@ def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
         "moisture": moisture,
         "rain": [0] * len(timestamps),
         "valve": valve
+    }
+
+
+
+@app.get("/api/beds/{bed_id}/lifetime")
+def lifetime_stats(bed_id: str, db: Session = Depends(get_db)):
+
+    rows = (
+        db.query(BedReading)
+        .filter(BedReading.bed_id == bed_id)
+        .order_by(BedReading.timestamp.asc())
+        .all()
+    )
+
+    if not rows:
+        return {"error": "no data"}
+
+    water_events = 0
+    last_state = "OFF"
+    last_watered = None
+    total_on_time = timedelta(0)
+
+    last_on_time = None
+
+    for r in rows:
+
+        # detect ON transition
+        if r.valve_state == "ON" and last_state != "ON":
+            water_events += 1
+            last_on_time = r.timestamp
+            last_watered = r.timestamp
+
+        # detect OFF transition
+        if r.valve_state == "OFF" and last_state == "ON":
+            if last_on_time:
+                total_on_time += (r.timestamp - last_on_time)
+                last_on_time = None
+
+        last_state = r.valve_state
+
+    return {
+        "bed_id": bed_id,
+        "times_watered": water_events,
+        "last_watered": last_watered,
+        "total_watering_minutes": round(total_on_time.total_seconds() / 60, 2),
+        "avg_moisture": sum(r.average for r in rows) / len(rows)
     }
