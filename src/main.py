@@ -28,6 +28,9 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from sklearn.ensemble import RandomForestClassifier
 import numpy as np
 
+
+watering_sessions = {}   # active watering (temporary)
+lifetime_stats = {}      # permanent stats (never reset)
 # ============================================================
 # 🧠 APP SETUP & DATABASE CONFIGURATION
 # ============================================================g
@@ -1541,4 +1544,81 @@ def lifetime_stats(bed_id: str, db: Session = Depends(get_db)):
         "last_watered": last_watered,
         "total_watering_minutes": round(total_on_time.total_seconds() / 60, 2),
         "avg_moisture": sum(r.average for r in rows) / len(rows)
+    }
+
+
+@app.post("/api/beds/{bed_id}/water-cycle")
+def water_cycle(bed_id: str, valve_state: str):
+    """
+    Handles lifecycle of watering cycles:
+    - ON  = start cycle
+    - OFF = end cycle + commit stats
+    """
+
+    now = datetime.utcnow()
+
+    # init lifetime bucket
+    if bed_id not in lifetime_stats:
+        lifetime_stats[bed_id] = {
+            "times_watered": 0,
+            "total_seconds": 0
+        }
+
+    # =========================
+    # 🌱 START WATERING
+    # =========================
+    if valve_state == "ON":
+
+        if bed_id not in watering_sessions:
+            watering_sessions[bed_id] = {
+                "start": now
+            }
+
+        return {
+            "bed_id": bed_id,
+            "state": "started"
+        }
+
+    # =========================
+    # 🔴 END WATERING
+    # =========================
+    if valve_state == "OFF":
+
+        session = watering_sessions.get(bed_id)
+
+        if session:
+
+            duration = (now - session["start"]).total_seconds()
+
+            lifetime_stats[bed_id]["times_watered"] += 1
+            lifetime_stats[bed_id]["total_seconds"] += duration
+
+            del watering_sessions[bed_id]
+
+            return {
+                "bed_id": bed_id,
+                "state": "stopped",
+                "duration_sec": duration
+            }
+
+    return {
+        "bed_id": bed_id,
+        "state": "no_change"
+    }
+
+
+
+
+@app.get("/api/beds/{bed_id}/lifetime")
+def lifetime_stats_endpoint(bed_id: str):
+
+    stats = lifetime_stats.get(bed_id, {
+        "times_watered": 0,
+        "total_seconds": 0
+    })
+
+    return {
+        "bed_id": bed_id,
+        "times_watered": stats["times_watered"],
+        "total_watering_minutes": round(stats["total_seconds"] / 60, 2)
     }

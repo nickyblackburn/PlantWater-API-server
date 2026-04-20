@@ -89,8 +89,20 @@ def apply_watering_effect(bed_id, decision):
         duration = 3  # match your backend default
 
         watering_state[bed_id] = datetime.utcnow() + timedelta(seconds=duration)
+        # when watering starts
+        report_valve_change(bed_id, "ON")
+
+        # when watering ends
+        report_valve_change(bed_id, "OFF")
 
         print(f"💧 {bed_id} watering for {duration}s")
+
+
+def report_valve_change(bed_id, valve_state):
+    requests.post(
+        f"{SERVER}/api/beds/{bed_id}/water-cycle",
+        params={"valve_state": valve_state}
+    )
 
 
 def run():
