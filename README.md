@@ -152,7 +152,8 @@ If you want to change the weather location or API key, update `CITY` and `OPENWE
 
 ## TODO:
 
-1. Get the watering status to show up on dashbord 
+1. Get the watering status to show up on dashbord  - x 
 2. get text messageing the stats of the system working 
 3. add a watering counter life time >w<
-4. Add discord status to discord bot ngl 
+4. Add discord status to discord bot ngl -x 
+5. get valve status to work on graph 

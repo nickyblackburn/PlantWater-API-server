@@ -1113,6 +1113,18 @@ def about_page():
     </style>
 </head>
 
+<nav class="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-secondary">
+  <div class="container-fluid">
+
+    <a class="navbar-brand" href="/">🌱 Smart Garden</a>
+
+    <div class="navbar-nav">
+      <a class="nav-link" href="/">Dashboard</a>
+      <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
+      <a class="nav-link" href="/about">About</a>
+    </div>
+
+    </nav>
 <body>
 
 <div class="container py-5">
@@ -1236,6 +1248,17 @@ select {
 </style>
 </head>
 
+<nav class="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-secondary">
+  <div class="container-fluid">
+
+    <a class="navbar-brand" href="/">🌱 Smart Garden</a>
+
+    <div class="navbar-nav">
+      <a class="nav-link" href="/">Dashboard</a>
+      <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
+      <a class="nav-link" href="/about">About</a>
+    </div>
+    </nav>
 <body>
 
 <div class="container py-4">
@@ -1508,32 +1531,28 @@ def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
 
     rows.reverse()
 
-    if not rows:
-        return {
-            "timestamps": [],
-            "moisture": [],
-            "rain": [],
-            "valve": []
-        }
-
     timestamps = []
     moisture = []
-    rain = []
     valve = []
 
     for r in rows:
         timestamps.append(r.timestamp.isoformat() if r.timestamp else "")
+        moisture.append(r.average or 0)
 
-        moisture.append(r.average if r.average is not None else 0)
+        # 🔥 IMPORTANT FIX:
+        # override DB with live valve if it exists
+        live = active_valves.get(bed_id)
 
-        # safe defaults so chart NEVER breaks
-        rain.append(0)
+        if live:
+            valve_state = 1 if live["state"] == "ON" else 0
+        else:
+            valve_state = 1 if r.valve_state == "ON" else 0
 
-        valve.append(1 if r.valve_state == "ON" else 0)
+        valve.append(valve_state)
 
     return {
         "timestamps": timestamps,
         "moisture": moisture,
-        "rain": rain,
+        "rain": [0] * len(timestamps),
         "valve": valve
     }
