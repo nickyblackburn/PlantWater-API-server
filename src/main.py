@@ -1237,6 +1237,7 @@ select {
 </head>
 
 <body>
+
 <div class="container py-4">
 
 <h1 class="mb-4">🌿 Garden Intelligence</h1>
@@ -1262,7 +1263,7 @@ let chart = null;
 let currentBed = null;
 
 /* =========================
-   CREATE CHART ONCE
+   CREATE CHART
 ========================= */
 function createChart(data) {
 
@@ -1271,74 +1272,72 @@ function createChart(data) {
     chart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: data.timestamps,
+            labels: data?.timestamps || [],
             datasets: [
-                { label: 'Soil Moisture', data: data.moisture, yAxisID: 'y' },
-                { label: 'Temperature', data: data.temp, yAxisID: 'y1' },
-                { label: 'Humidity', data: data.humidity, yAxisID: 'y1' },
-                { label: 'Watering', data: data.valve, yAxisID: 'y2' },
-                { label: 'Rain', data: data.rain, yAxisID: 'y2' }
+
+                {
+                    label: 'Soil Moisture',
+                    data: data?.moisture || [],
+                    borderWidth: 2,
+                    tension: 0.3,
+                    yAxisID: 'y'
+                },
+
+                {
+                    label: 'Valve State',
+                    data: data?.valve || [],
+                    stepped: true,
+                    borderWidth: 2,
+                    yAxisID: 'y2'
+                }
+
             ]
         },
         options: {
             animation: false,
             responsive: true,
-            interaction: { mode: 'index', intersect: false },
 
             scales: {
                 y: {
                     position: 'left',
                     title: { display: true, text: 'Moisture' }
                 },
-                y1: {
-                    position: 'right',
-                    title: { display: true, text: 'Weather' },
-                    grid: { drawOnChartArea: false }
-                },
                 y2: {
                     position: 'right',
                     min: 0,
                     max: 1,
-                    display: false
+                    grid: { drawOnChartArea: false }
                 }
             }
         }
     });
 }
-
 /* =========================
-   UPDATE CHART (LIVE)
+   UPDATE CHART
 ========================= */
 function updateChart(data) {
-    if (!chart) return;
+    if (!chart || !data) return;
 
-    chart.data.labels = data.timestamps;
-
-    chart.data.datasets[0].data = data.moisture;
-    chart.data.datasets[1].data = data.temp;
-    chart.data.datasets[2].data = data.humidity;
-    chart.data.datasets[3].data = data.valve;
-    chart.data.datasets[4].data = data.rain;
+    chart.data.labels = data.timestamps || [];
+    chart.data.datasets[0].data = data.moisture || [];
+    chart.data.datasets[1].data = data.valve || [];
 
     chart.update();
 }
 
 /* =========================
-   LOAD GRAPH DATA
+   LOAD GRAPH
 ========================= */
 async function loadGraph(bed) {
     const res = await fetch(`/api/beds/${bed}/full-graph`);
     const data = await res.json();
 
-    if (!chart) {
-        createChart(data);
-    } else {
-        updateChart(data);
-    }
+    if (!chart) createChart(data);
+    else updateChart(data);
 }
 
 /* =========================
-   LIVE STATUS BOX
+   LIVE STATUS
 ========================= */
 async function loadStatus() {
     if (!currentBed) return;
@@ -1347,7 +1346,6 @@ async function loadStatus() {
     const data = await res.json();
 
     const b = data[currentBed];
-
     if (!b) return;
 
     let status = "🟢 Healthy";
@@ -1364,7 +1362,7 @@ async function loadStatus() {
 }
 
 /* =========================
-   LOAD BED LIST
+   LOAD BEDS
 ========================= */
 async function loadBeds() {
     const res = await fetch('/api/beds');
@@ -1406,7 +1404,7 @@ function startLive() {
 }
 
 /* =========================
-   START
+   INIT
 ========================= */
 loadBeds();
 startLive();
@@ -1497,8 +1495,6 @@ def get_mode(bed_id: str):
         "mode": active_valves.get(bed_id, {}).get("mode", "normal")
     }
 
-
-# graphs the full beds 
 @app.get("/api/beds/{bed_id}/full-graph")
 def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
 
@@ -1512,11 +1508,32 @@ def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
 
     rows.reverse()
 
+    if not rows:
+        return {
+            "timestamps": [],
+            "moisture": [],
+            "rain": [],
+            "valve": []
+        }
+
+    timestamps = []
+    moisture = []
+    rain = []
+    valve = []
+
+    for r in rows:
+        timestamps.append(r.timestamp.isoformat() if r.timestamp else "")
+
+        moisture.append(r.average if r.average is not None else 0)
+
+        # safe defaults so chart NEVER breaks
+        rain.append(0)
+
+        valve.append(1 if r.valve_state == "ON" else 0)
+
     return {
-        "timestamps": [r.timestamp for r in rows],
-        "moisture": [r.average for r in rows],
-        "valve": [1 if r.valve_state == "ON" else 0 for r in rows],
-        "temp": [r.weather["temp"] if r.weather else None for r in rows],
-        "humidity": [r.weather["humidity"] if r.weather else None for r in rows],
-        "rain": [1 if r.weather and r.weather["is_raining_now"] else 0 for r in rows],
+        "timestamps": timestamps,
+        "moisture": moisture,
+        "rain": rain,
+        "valve": valve
     }
