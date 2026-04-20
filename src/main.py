@@ -827,7 +827,19 @@ def dashboard():
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+<nav class="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-secondary">
+  <div class="container-fluid">
 
+    <a class="navbar-brand" href="/">🌱 Smart Garden</a>
+
+    <div class="navbar-nav">
+      <a class="nav-link" href="/">Dashboard</a>
+      <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
+      <a class="nav-link" href="/about">About</a>
+    </div>
+
+  </div>
+</nav>
 <body class="bg-dark text-light">
 <div class="container py-4">
 
@@ -1200,98 +1212,210 @@ def garden_health_page():
 <!DOCTYPE html>
 <html>
 <head>
-    <title>🌿 Garden Health</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<title>🌿 Garden Intelligence</title>
 
-    <style>
-        body {
-            background: #0f1115;
-            color: #ffffff;
-        }
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-        .card {
-            background: #1b1f2a;
-            border: 1px solid #2a2f3a;
-        }
+<style>
+body {
+    background:#0f1115;
+    color:white;
+}
 
-        .healthy { color: #00ff9a; }
-        .dry { color: #ff5c5c; }
-        .wet { color: #4da6ff; }
+.card {
+    background:#1b1f2a;
+    border:1px solid #2a2f3a;
+}
 
-        .glow {
-            text-shadow: 0 0 10px rgba(0,255,154,0.4);
-        }
-    </style>
+select {
+    background:#1b1f2a !important;
+    color:white !important;
+    border:1px solid #2a2f3a !important;
+}
+</style>
 </head>
 
 <body>
-<div class="container py-5">
+<div class="container py-4">
 
-    <h1 class="glow mb-4">🌿 Garden Health Dashboard</h1>
+<h1 class="mb-4">🌿 Garden Intelligence</h1>
 
-    <div id="healthContainer" class="row"></div>
+<!-- BED SELECT -->
+<select id="bedSelect" class="form-select mb-3"></select>
 
-    <div class="text-center mt-4">
-        <a href="/" class="btn btn-outline-light">← Back</a>
-    </div>
+<!-- LIVE STATUS -->
+<div class="card p-3 mb-3">
+    <div id="liveStatus">Loading...</div>
+</div>
+
+<!-- GRAPH -->
+<div class="card p-3">
+    <canvas id="chart"></canvas>
+</div>
 
 </div>
 
 <script>
 
+let chart = null;
+let currentBed = null;
+
 /* =========================
-   🌿 LOAD FULL HEALTH DATA
+   CREATE CHART ONCE
 ========================= */
-async function loadHealth() {
-    const bedsRes = await fetch('/api/beds');
-    const beds = await bedsRes.json();
+function createChart(data) {
 
-    let html = "";
+    const ctx = document.getElementById("chart");
 
-    for (const bed in beds) {
-        const statsRes = await fetch(`/api/beds/${bed}/stats`);
-        const stats = await statsRes.json();
+    chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.timestamps,
+            datasets: [
+                { label: 'Soil Moisture', data: data.moisture, yAxisID: 'y' },
+                { label: 'Temperature', data: data.temp, yAxisID: 'y1' },
+                { label: 'Humidity', data: data.humidity, yAxisID: 'y1' },
+                { label: 'Watering', data: data.valve, yAxisID: 'y2' },
+                { label: 'Rain', data: data.rain, yAxisID: 'y2' }
+            ]
+        },
+        options: {
+            animation: false,
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
 
-        if (stats.error) continue;
-
-        let status = "Healthy";
-        let statusClass = "healthy";
-
-        if (stats.avg > 700) {
-            status = "Too Dry";
-            statusClass = "dry";
-        } else if (stats.avg < 300) {
-            status = "Too Wet";
-            statusClass = "wet";
+            scales: {
+                y: {
+                    position: 'left',
+                    title: { display: true, text: 'Moisture' }
+                },
+                y1: {
+                    position: 'right',
+                    title: { display: true, text: 'Weather' },
+                    grid: { drawOnChartArea: false }
+                },
+                y2: {
+                    position: 'right',
+                    min: 0,
+                    max: 1,
+                    display: false
+                }
+            }
         }
-
-        html += `
-        <div class="col-md-4">
-            <div class="card p-3 mb-4">
-                <h4>${bed}</h4>
-                <p>Avg Moisture: ${stats.avg.toFixed(1)}</p>
-                <p>Min: ${stats.min.toFixed(1)}</p>
-                <p>Max: ${stats.max.toFixed(1)}</p>
-                <p>Readings: ${stats.count}</p>
-                <h5 class="${statusClass}">${status}</h5>
-            </div>
-        </div>
-        `;
-    }
-
-    document.getElementById("healthContainer").innerHTML = html;
+    });
 }
 
-loadHealth();
-setInterval(loadHealth, 10000);
+/* =========================
+   UPDATE CHART (LIVE)
+========================= */
+function updateChart(data) {
+    if (!chart) return;
+
+    chart.data.labels = data.timestamps;
+
+    chart.data.datasets[0].data = data.moisture;
+    chart.data.datasets[1].data = data.temp;
+    chart.data.datasets[2].data = data.humidity;
+    chart.data.datasets[3].data = data.valve;
+    chart.data.datasets[4].data = data.rain;
+
+    chart.update();
+}
+
+/* =========================
+   LOAD GRAPH DATA
+========================= */
+async function loadGraph(bed) {
+    const res = await fetch(`/api/beds/${bed}/full-graph`);
+    const data = await res.json();
+
+    if (!chart) {
+        createChart(data);
+    } else {
+        updateChart(data);
+    }
+}
+
+/* =========================
+   LIVE STATUS BOX
+========================= */
+async function loadStatus() {
+    if (!currentBed) return;
+
+    const res = await fetch('/api/beds/latest');
+    const data = await res.json();
+
+    const b = data[currentBed];
+
+    if (!b) return;
+
+    let status = "🟢 Healthy";
+
+    if (b.average > 700) status = "🔴 Dry";
+    else if (b.average < 300) status = "🔵 Too Wet";
+
+    document.getElementById("liveStatus").innerHTML = `
+        <h5>${currentBed}</h5>
+        <p>💧 Moisture: ${b.average.toFixed(1)}</p>
+        <p>🚰 Valve: ${b.valve_state}</p>
+        <p>${status}</p>
+    `;
+}
+
+/* =========================
+   LOAD BED LIST
+========================= */
+async function loadBeds() {
+    const res = await fetch('/api/beds');
+    const beds = await res.json();
+
+    const select = document.getElementById("bedSelect");
+
+    select.innerHTML = "";
+
+    for (const bed in beds) {
+        const opt = document.createElement("option");
+        opt.value = bed;
+        opt.text = bed;
+        select.appendChild(opt);
+    }
+
+    currentBed = select.value;
+
+    loadGraph(currentBed);
+    loadStatus();
+
+    select.addEventListener("change", () => {
+        currentBed = select.value;
+        loadGraph(currentBed);
+        loadStatus();
+    });
+}
+
+/* =========================
+   LIVE LOOP
+========================= */
+function startLive() {
+    setInterval(() => {
+        if (currentBed) {
+            loadGraph(currentBed);
+            loadStatus();
+        }
+    }, 3000);
+}
+
+/* =========================
+   START
+========================= */
+loadBeds();
+startLive();
 
 </script>
 
 </body>
 </html>
 """
-
 @app.get("/api/will-rain")
 def weather_api():
     return get_weather()
