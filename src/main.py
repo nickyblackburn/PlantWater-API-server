@@ -1241,4 +1241,24 @@ def valve_status(bed_id: str):
 
     return {"bed_id": bed_id, "valve_state": "ON"}
 
+    ############################################
+    #Power modes endpoints
+    ################################
 
+@app.post("/api/beds/{bed_id}/mode")
+def set_mode(bed_id: str, mode: str):
+    active_valves.setdefault(bed_id, {})
+
+    active_valves[bed_id]["mode"] = mode
+
+    return {
+        "bed_id": bed_id,
+        "mode": mode
+    }
+
+@app.get("/api/beds/{bed_id}/mode")
+def get_mode(bed_id: str):
+    return {
+        "bed_id": bed_id,
+        "mode": active_valves.get(bed_id, {}).get("mode", "normal")
+    }
