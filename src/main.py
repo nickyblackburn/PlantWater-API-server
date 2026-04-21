@@ -886,6 +886,7 @@ body {
     <div class="navbar-nav">
       <a class="nav-link" href="/">Dashboard</a>
       <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
+      <a class="nav-link" href="/docs">API Docs</a>
       <a class="nav-link" href="/about">About</a>
     </div>
 
@@ -1161,6 +1162,7 @@ def about_page():
     <div class="navbar-nav">
       <a class="nav-link" href="/">Dashboard</a>
       <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
+      <a class="nav-link" href="/docs">API Docs</a>
       <a class="nav-link" href="/about">About</a>
     </div>
 
