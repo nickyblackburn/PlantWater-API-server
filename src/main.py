@@ -1217,6 +1217,8 @@ select {
 </style>
 </head>
 
+<body>
+
 <nav class="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-secondary">
   <div class="container-fluid">
 
@@ -1227,29 +1229,26 @@ select {
       <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
       <a class="nav-link" href="/about">About</a>
     </div>
-    </nav>
-<body>
+
+</nav>
 
 <div class="container py-4">
 
 <h1 class="mb-4">🌿 Garden Intelligence</h1>
 
-<!-- BED SELECT -->
 <select id="bedSelect" class="form-select mb-3"></select>
 
-<!-- LIVE STATUS -->
 <div class="card p-3 mb-3">
     <div id="liveStatus">Loading...</div>
 </div>
 
-<!-- GRAPH -->
 <div class="card p-3">
     <canvas id="chart"></canvas>
 </div>
 
 </div>
-<footer style="text-align:center; padding:20px; color:#9aa4b2; border-top:1px solid #2a2f3a; margin-top:40px;">
 
+<footer style="text-align:center; padding:20px; color:#9aa4b2; border-top:1px solid #2a2f3a; margin-top:40px;">
     <div style="margin-bottom:10px;">
         Made with 💖 Nicky Blackburn
     </div>
@@ -1257,18 +1256,25 @@ select {
     <a href="/about" class="btn btn-outline-light btn-sm">
         About This Project
     </a>
-
 </footer>
+
 <script>
 
 let chart = null;
 let currentBed = null;
 
 /* =========================
+   GET URL PARAM
+========================= */
+function getBedFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("bed");
+}
+
+/* =========================
    CREATE CHART
 ========================= */
 function createChart(data) {
-
     const ctx = document.getElementById("chart");
 
     chart = new Chart(ctx, {
@@ -1276,7 +1282,6 @@ function createChart(data) {
         data: {
             labels: data?.timestamps || [],
             datasets: [
-
                 {
                     label: 'Soil Moisture',
                     data: data?.moisture || [],
@@ -1284,7 +1289,6 @@ function createChart(data) {
                     tension: 0.3,
                     yAxisID: 'y'
                 },
-
                 {
                     label: 'Valve State',
                     data: data?.valve || [],
@@ -1292,13 +1296,11 @@ function createChart(data) {
                     borderWidth: 2,
                     yAxisID: 'y2'
                 }
-
             ]
         },
         options: {
             animation: false,
             responsive: true,
-
             scales: {
                 y: {
                     position: 'left',
@@ -1314,6 +1316,7 @@ function createChart(data) {
         }
     });
 }
+
 /* =========================
    UPDATE CHART
 ========================= */
@@ -1364,15 +1367,16 @@ async function loadStatus() {
 }
 
 /* =========================
-   LOAD BEDS
+   LOAD BEDS (✨ FIXED)
 ========================= */
 async function loadBeds() {
     const res = await fetch('/api/beds');
     const beds = await res.json();
 
     const select = document.getElementById("bedSelect");
-
     select.innerHTML = "";
+
+    const selectedFromURL = getBedFromURL();
 
     for (const bed in beds) {
         const opt = document.createElement("option");
@@ -1381,13 +1385,23 @@ async function loadBeds() {
         select.appendChild(opt);
     }
 
-    currentBed = select.value;
+    // ✨ Select correct bed
+    if (selectedFromURL && beds[selectedFromURL]) {
+        currentBed = selectedFromURL;
+        select.value = selectedFromURL;
+    } else {
+        currentBed = select.value;
+    }
 
     loadGraph(currentBed);
     loadStatus();
 
     select.addEventListener("change", () => {
         currentBed = select.value;
+
+        // ✨ Update URL dynamically
+        window.history.replaceState(null, "", `?bed=${currentBed}`);
+
         loadGraph(currentBed);
         loadStatus();
     });
