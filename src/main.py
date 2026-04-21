@@ -6,6 +6,7 @@
 # ============================================================
 
 # Import required libraries for FastAPI framework
+from http.client import HTTPException
 import json
 import os
 
@@ -38,15 +39,6 @@ valve_history = defaultdict(list)
 watering_sessions = {}   # active watering (temporary)
 lifetime_stats_store = {}  # permanent stats (never reset)
 
-# ========================
-# Meta file
-############################
-
-
-META_FILE = "bed_meta.json"
-if os.path.exists(META_FILE):
-    with open(META_FILE, "r") as f:
-        bed_metadata = json.load(f)
 
 # ============================================================
 # 🧠 APP SETUP & DATABASE CONFIGURATION
@@ -331,7 +323,7 @@ def receive_data(data: BedData, db: Session = Depends(get_db)):
             valve_state=data.valve_state,
             rssi=data.rssi,
             sensors=data.sensors,
-            weather=weather  
+            weather=weather,
         )
 
         # Add reading to session and commit to database
@@ -1300,6 +1292,7 @@ select {
     <div class="navbar-nav">
       <a class="nav-link" href="/">Dashboard</a>
       <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
+      <a class="nav-link" href="/docs">API Docs</a>
       <a class="nav-link" href="/about">About</a>
     </div>
 

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 SERVER = "http://127.0.0.1:8000"
 
 
-BEDS = [f"bed_{i}" for i in range(1, 21)]
+BEDS = [f"bed_{i}" for i in range(1, 5)]
 
 
 soil_state = {

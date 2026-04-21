@@ -1,5 +1,9 @@
 # PlantWater API Server
 
+<p align="center">
+  <img src="ezgif-4963a1d02fff645e.gif" width="700"/>
+</p>
+
 ## Overview
 
 A lightweight FastAPI-based server for a smart irrigation system. The API stores plant bed sensor readings, manages watering configurations, evaluates watering decisions with weather-aware logic, and exposes endpoints for historical and graph-ready data. A simulator script (`src/simulator.py`) sends synthetic ESP32-style sensor data and exercises the watering decision endpoint.
@@ -157,3 +161,4 @@ If you want to change the weather location or API key, update `CITY` and `OPENWE
 3. add a watering counter life time >w< -x 
 4. Add discord status to discord bot ngl -x 
 5. get valve status to work on graph -x 
+6. add APi keys to the pain endpoints that require it like the bed data and etc
