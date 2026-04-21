@@ -663,7 +663,7 @@ def get_config(bed_id: str, db: Session = Depends(get_db)):
 # ============================================================
 
 
-@app.post("/api/config/{bed_id}")
+@app.post("/api/config/{bed_id}", dependencies=[Depends(verify_api_key)])
 def update_config(bed_id: str, config: BedConfig, db: Session = Depends(get_db)):
     """
     Update configuration settings for a plant bed.
@@ -709,7 +709,7 @@ def update_config(bed_id: str, config: BedConfig, db: Session = Depends(get_db))
 # ============================================================
 # 🌧️ INTELLIGENT WATERING DECISION ENGINE
 # ============================================================
-@app.post("/api/should-water")
+@app.post("/api/should-water", dependencies=[Depends(verify_api_key)])
 def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get_db)):
 
     config = db.query(BedConfigDB).filter(BedConfigDB.bed_id == bed_id).first()
