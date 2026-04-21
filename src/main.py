@@ -6,7 +6,10 @@
 # ============================================================
 
 # Import required libraries for FastAPI framework
-from fastapi import FastAPI, Depends
+import json
+import os
+
+from fastapi import Body, FastAPI, Depends
 
 # Import Pydantic for request/response validation
 from fastapi.responses import HTMLResponse
@@ -34,6 +37,19 @@ valve_history = defaultdict(list)
 
 watering_sessions = {}   # active watering (temporary)
 lifetime_stats_store = {}  # permanent stats (never reset)
+bed_metadata: Dict[str, dict] = {}
+
+
+# ========================
+# Meta file
+############################
+
+
+META_FILE = "bed_meta.json"
+if os.path.exists(META_FILE):
+    with open(META_FILE, "r") as f:
+        bed_metadata = json.load(f)
+
 # ============================================================
 # 🧠 APP SETUP & DATABASE CONFIGURATION
 # ============================================================g
@@ -839,16 +855,8 @@ body {
     color:#9aa4b2;
 }
 
-/* ✨ NEW: clickable cards */
-.clickable-card {
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.clickable-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 0 15px rgba(0,255,154,0.2);
-    border-color: #00ff9a;
+.clickable-title {
+    cursor:pointer;
 }
 </style>
 </head>
@@ -873,25 +881,41 @@ body {
 
 <h2 class="mb-3">🌿 Garden Control Panel</h2>
 
-<div id="weather" class="alert alert-info">
-Loading weather...
-</div>
+<div id="weather" class="alert alert-info">Loading weather...</div>
 
 <div class="row" id="beds"></div>
 
 </div>
 
 <footer style="text-align:center; padding:20px; color:#9aa4b2; border-top:1px solid #2a2f3a; margin-top:40px;">
-    <div style="margin-bottom:10px;">
-        Made with 💖 Nicky Blackburn
-    </div>
-
-    <a href="/about" class="btn btn-outline-light btn-sm">
-        About This Project
-    </a>
+    Made with 💖 Nicky Blackburn
 </footer>
 
 <script>
+
+/* =========================
+   STATE
+========================= */
+let bedMeta = {};
+
+/* =========================
+   LOAD META FROM SERVER
+========================= */
+async function loadMeta() {
+    const res = await fetch("/api/beds/meta");
+    bedMeta = await res.json();
+}
+
+/* =========================
+   SAVE META TO SERVER
+========================= */
+async function saveMeta(bedId, meta) {
+    await fetch(`/api/beds/${bedId}/meta`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(meta)
+    });
+}
 
 /* =========================
    WEATHER
@@ -901,9 +925,7 @@ async function loadWeather() {
     const data = await res.json();
 
     document.getElementById("weather").innerText =
-        data.will_rain
-            ? "🌧 Rain expected soon"
-            : "☀ Stable conditions";
+        data.will_rain ? "🌧 Rain expected soon" : "☀ Stable conditions";
 }
 
 /* =========================
@@ -916,10 +938,31 @@ function getStatus(avg) {
 }
 
 /* =========================
-   NAVIGATION (✨ NEW)
+   NAVIGATION
 ========================= */
 function goToBed(bedId) {
     window.location.href = `/health-dashboard?bed=${bedId}`;
+}
+
+/* =========================
+   EDIT BED (NOW FULL DB SYNC)
+========================= */
+async function editBed(bedId) {
+
+    const current = bedMeta[bedId] || {};
+
+    const name = prompt("Plant / Bed Name:", current.name || bedId);
+    if (name === null) return;
+
+    const icon = prompt("Emoji / Icon:", current.icon || "🌱");
+    if (icon === null) return;
+
+    const meta = { name, icon };
+
+    bedMeta[bedId] = meta;   // instant UI update
+    await saveMeta(bedId, meta); // DB update
+
+    loadBeds();
 }
 
 /* =========================
@@ -935,26 +978,36 @@ async function loadBeds() {
 
         const b = latest[bed];
         const life = await fetch(`/api/beds/${bed}/lifetime`).then(r => r.json());
+
         const status = getStatus(b.average);
+
+        const meta = bedMeta[b.bed_id] || {};
+        const name = meta.name || b.bed_id;
+        const icon = meta.icon || "🌱";
 
         html += `
         <div class="col-md-4 mb-3">
-            <div class="card p-3 clickable-card" onclick="goToBed('${b.bed_id}')">
+            <div class="card p-3">
 
-                <h5>${b.bed_id}</h5>
+                <h5 class="clickable-title" onclick="goToBed('${b.bed_id}')">
+                    ${icon} ${name}
+                </h5>
 
-                <p class="${status.cls}">
-                    ${status.text}
-                </p>
+                <div class="small">ID: ${b.bed_id}</div>
+
+                <button class="btn btn-sm btn-outline-light mt-2"
+                        onclick="editBed('${b.bed_id}')">
+                    ✏ Edit
+                </button>
+
+                <p class="${status.cls} mt-2">${status.text}</p>
 
                 <p>💧 Moisture: ${b.average.toFixed(1)}</p>
-
                 <p>🚰 Valve: ${b.valve_state}</p>
 
                 <hr>
 
                 <p>🌊 Water Cycles: <b>${life.times_watered || 0}</b></p>
-
                 <p>⏱ Total Watering: <b>${life.total_watering_minutes || 0} min</b></p>
 
                 <p class="small">
@@ -974,13 +1027,16 @@ async function loadBeds() {
 }
 
 /* =========================
-   START LOOP
+   INIT (FIXED FLOW)
 ========================= */
-loadBeds();
-loadWeather();
+(async function init() {
+    await loadMeta();
+    await loadBeds();
+    await loadWeather();
 
-setInterval(loadBeds, 3000);
-setInterval(loadWeather, 10000);
+    setInterval(loadBeds, 3000);
+    setInterval(loadWeather, 10000);
+})();
 
 </script>
 
@@ -1679,3 +1735,25 @@ def lifetime_stats_endpoint(bed_id: str):
         "times_watered": stats["times_watered"],
         "total_watering_minutes": round(stats["total_seconds"] / 60, 2)
     }
+
+
+@app.post("/api/beds/{bed_id}/meta")
+def save_bed_meta(bed_id: str, data: dict = Body(...)):
+
+    bed_metadata[bed_id] = {
+        "name": data.get("name", bed_id),
+        "icon": data.get("icon", "🌱")
+    }
+
+    with open(META_FILE, "w") as f:
+        json.dump(bed_metadata, f)
+
+    return {
+        "ok": True,
+        "bed_id": bed_id,
+        "meta": bed_metadata[bed_id]
+    }
+
+@app.get("/api/beds/meta")
+def get_all_bed_meta():
+    return bed_metadata
