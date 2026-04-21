@@ -4,8 +4,12 @@ import time
 from datetime import datetime, timedelta
 
 SERVER = "http://127.0.0.1:8000"
-
-BEDS = ["bed_1", "bed_2", "bed_3", "bed_4"]
+BEDS = [
+    "bed_1", "bed_2", "bed_3", "bed_4", "bed_5",
+    "bed_6", "bed_7", "bed_8", "bed_9", "bed_10",
+    "bed_11", "bed_12", "bed_13", "bed_14", "bed_15",
+    "bed_16", "bed_17", "bed_18", "bed_19", "bed_20"
+]
 
 soil_state = {
     bed: random.uniform(300, 800)
