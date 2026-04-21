@@ -33,7 +33,7 @@ from collections import defaultdict
 valve_history = defaultdict(list)
 
 watering_sessions = {}   # active watering (temporary)
-lifetime_stats = {}      # permanent stats (never reset)
+lifetime_stats_store = {}  # permanent stats (never reset)
 # ============================================================
 # 🧠 APP SETUP & DATABASE CONFIGURATION
 # ============================================================g
@@ -1607,8 +1607,8 @@ def water_cycle(bed_id: str, valve_state: str):
     # -------------------------
     # INIT STORAGE
     # -------------------------
-    if bed_id not in lifetime_stats:
-        lifetime_stats[bed_id] = {
+    if bed_id not in lifetime_stats_store:
+        lifetime_stats_store[bed_id] = {
             "times_watered": 0,
             "total_seconds": 0
         }
@@ -1644,8 +1644,8 @@ def water_cycle(bed_id: str, valve_state: str):
 
             duration = (now - session["start"]).total_seconds()
 
-            lifetime_stats[bed_id]["times_watered"] += 1
-            lifetime_stats[bed_id]["total_seconds"] += duration
+            lifetime_stats_store[bed_id]["times_watered"] += 1
+            lifetime_stats_store[bed_id]["total_seconds"] += duration
 
             watering_sessions[bed_id] = None
 
