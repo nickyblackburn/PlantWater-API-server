@@ -94,7 +94,15 @@ weather_cache = {
 # ============================================================
 # 🌿 DATABASE MODELS (ORM)
 # ============================================================
+# BedMeta: Stores metadata for plant beds (name, icon) for display purposes
+class BedMetaDB(Base):
+    __tablename__ = "bed_meta"
 
+    id = Column(Integer, primary_key=True)
+    bed_id = Column(String, unique=True, index=True, nullable=False)
+
+    name = Column(String, default="")
+    icon = Column(String, default="🌱")
 
 # BedReading: Records sensor data from a plant bed at specific timestamps
 # Each reading captures all sensors' measurements and system state
@@ -1744,25 +1752,59 @@ def lifetime_stats_endpoint(bed_id: str):
         "times_watered": stats["times_watered"],
         "total_watering_minutes": round(stats["total_seconds"] / 60, 2)
     }
-
-
 @app.post("/api/beds/{bed_id}/meta")
-def save_bed_meta(bed_id: str, data: dict = Body(...)):
+def save_bed_meta(
+    bed_id: str,
+    data: dict = Body(...),
+    db: Session = Depends(get_db)
+):
 
-    bed_metadata[bed_id] = {
-        "name": data.get("name", bed_id),
-        "icon": data.get("icon", "🌱")
-    }
+    row = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
 
-    with open(META_FILE, "w") as f:
-        json.dump(bed_metadata, f)
+    if not row:
+        row = BedMetaDB(bed_id=bed_id)
+        db.add(row)
+
+    row.name = data.get("name", bed_id)
+    row.icon = data.get("icon", "🌱")
+
+    db.commit()
+    db.refresh(row)
 
     return {
         "ok": True,
         "bed_id": bed_id,
-        "meta": bed_metadata[bed_id]
+        "meta": {
+            "name": row.name,
+            "icon": row.icon
+        }
+    }
+
+@app.get("/api/beds/{bed_id}/meta")
+def get_bed_meta(bed_id: str, db: Session = Depends(get_db)):
+    row = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
+
+    if not row:
+        return {
+            "bed_id": bed_id,
+            "name": bed_id,
+            "icon": "🌱"
+        }
+
+    return {
+        "bed_id": bed_id,
+        "name": row.name,
+        "icon": row.icon
     }
 
 @app.get("/api/beds/meta")
-def get_all_bed_meta():
-    return bed_metadata
+def get_all_bed_meta(db: Session = Depends(get_db)):
+    rows = db.query(BedMetaDB).all()
+
+    return {
+        r.bed_id: {
+            "name": r.name,
+            "icon": r.icon
+        }
+        for r in rows
+    }
