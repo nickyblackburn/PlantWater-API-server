@@ -1465,8 +1465,11 @@ async function loadStatus() {
    LOAD BEDS
 ========================= */
 async function loadBeds() {
-    const res = await fetch('/api/beds');
-    const beds = await res.json();
+    const bedsRes = await fetch('/api/beds');
+    const beds = await bedsRes.json();
+
+    const metaRes = await fetch('/api/beds/meta');
+    const meta = await metaRes.json();
 
     const select = document.getElementById("bedSelect");
     select.innerHTML = "";
@@ -1474,12 +1477,21 @@ async function loadBeds() {
     const selectedFromURL = getBedFromURL();
 
     for (const bed in beds) {
+
+        const m = meta[bed] || {};
+        const name = m.name || bed;
+        const icon = m.icon || "🌱";
+
         const opt = document.createElement("option");
         opt.value = bed;
-        opt.text = bed;
+
+        // ✨ THIS is the important part
+        opt.text = `${icon} ${name}`;
+
         select.appendChild(opt);
     }
 
+    // select correct bed
     if (selectedFromURL && beds[selectedFromURL]) {
         currentBed = selectedFromURL;
         select.value = selectedFromURL;
