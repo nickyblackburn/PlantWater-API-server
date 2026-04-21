@@ -838,12 +838,23 @@ body {
     font-size:12px;
     color:#9aa4b2;
 }
+
+/* ✨ NEW: clickable cards */
+.clickable-card {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.clickable-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 0 15px rgba(0,255,154,0.2);
+    border-color: #00ff9a;
+}
 </style>
 </head>
 
 <body>
 
-<!-- NAVBAR -->
 <nav class="navbar navbar-expand-lg navbar-dark">
   <div class="container-fluid">
 
@@ -862,18 +873,15 @@ body {
 
 <h2 class="mb-3">🌿 Garden Control Panel</h2>
 
-<!-- WEATHER -->
 <div id="weather" class="alert alert-info">
 Loading weather...
 </div>
 
-<!-- BEDS -->
 <div class="row" id="beds"></div>
 
 </div>
 
 <footer style="text-align:center; padding:20px; color:#9aa4b2; border-top:1px solid #2a2f3a; margin-top:40px;">
-
     <div style="margin-bottom:10px;">
         Made with 💖 Nicky Blackburn
     </div>
@@ -881,12 +889,12 @@ Loading weather...
     <a href="/about" class="btn btn-outline-light btn-sm">
         About This Project
     </a>
-
 </footer>
+
 <script>
 
 /* =========================
-   WEATHER (LIGHT CACHE SAFE)
+   WEATHER
 ========================= */
 async function loadWeather() {
     const res = await fetch('/api/weather');
@@ -899,7 +907,7 @@ async function loadWeather() {
 }
 
 /* =========================
-   STATUS LOGIC
+   STATUS
 ========================= */
 function getStatus(avg) {
     if (avg > 700) return { text:"DRY", cls:"status-bad" };
@@ -908,7 +916,14 @@ function getStatus(avg) {
 }
 
 /* =========================
-   MAIN DASHBOARD LOAD
+   NAVIGATION (✨ NEW)
+========================= */
+function goToBed(bedId) {
+    window.location.href = `/health-dashboard?bed=${bedId}`;
+}
+
+/* =========================
+   LOAD BEDS
 ========================= */
 async function loadBeds() {
 
@@ -919,15 +934,12 @@ async function loadBeds() {
     for (const bed in latest) {
 
         const b = latest[bed];
-
-        // lifetime stats per bed
         const life = await fetch(`/api/beds/${bed}/lifetime`).then(r => r.json());
-
         const status = getStatus(b.average);
 
         html += `
         <div class="col-md-4 mb-3">
-            <div class="card p-3">
+            <div class="card p-3 clickable-card" onclick="goToBed('${b.bed_id}')">
 
                 <h5>${b.bed_id}</h5>
 
