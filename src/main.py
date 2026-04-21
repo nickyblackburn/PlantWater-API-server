@@ -1341,6 +1341,15 @@ select {
 
 let chart = null;
 let currentBed = null;
+let bedMeta = {}; // ⭐ NEW
+
+/* =========================
+   LOAD META
+========================= */
+async function loadMeta() {
+    const res = await fetch("/api/beds/meta");
+    bedMeta = await res.json();
+}
 
 /* =========================
    GET URL PARAM
@@ -1421,7 +1430,7 @@ async function loadGraph(bed) {
 }
 
 /* =========================
-   LIVE STATUS
+   LIVE STATUS (✨ FIXED TITLE)
 ========================= */
 async function loadStatus() {
     if (!currentBed) return;
@@ -1437,8 +1446,15 @@ async function loadStatus() {
     if (b.average > 700) status = "🔴 Dry";
     else if (b.average < 300) status = "🔵 Too Wet";
 
+    // ⭐ USE META HERE
+    const meta = bedMeta[currentBed] || {};
+    const name = meta.name || currentBed;
+    const icon = meta.icon || "🌱";
+
     document.getElementById("liveStatus").innerHTML = `
-        <h5>${currentBed}</h5>
+        <h5 style="font-weight:600; font-size:20px;">
+            ${icon} ${name}
+        </h5>
         <p>💧 Moisture: ${b.average.toFixed(1)}</p>
         <p>🚰 Valve: ${b.valve_state}</p>
         <p>${status}</p>
@@ -1446,7 +1462,7 @@ async function loadStatus() {
 }
 
 /* =========================
-   LOAD BEDS (✨ FIXED)
+   LOAD BEDS
 ========================= */
 async function loadBeds() {
     const res = await fetch('/api/beds');
@@ -1464,7 +1480,6 @@ async function loadBeds() {
         select.appendChild(opt);
     }
 
-    // ✨ Select correct bed
     if (selectedFromURL && beds[selectedFromURL]) {
         currentBed = selectedFromURL;
         select.value = selectedFromURL;
@@ -1478,7 +1493,6 @@ async function loadBeds() {
     select.addEventListener("change", () => {
         currentBed = select.value;
 
-        // ✨ Update URL dynamically
         window.history.replaceState(null, "", `?bed=${currentBed}`);
 
         loadGraph(currentBed);
@@ -1499,10 +1513,13 @@ function startLive() {
 }
 
 /* =========================
-   INIT
+   INIT (✨ UPDATED)
 ========================= */
-loadBeds();
-startLive();
+(async function init() {
+    await loadMeta(); // ⭐ IMPORTANT
+    await loadBeds();
+    startLive();
+})();
 
 </script>
 
@@ -1678,7 +1695,7 @@ def lifetime_stats(bed_id: str, db: Session = Depends(get_db)):
 
 from datetime import datetime
 
-@app.post("/api/beds/{bed_id}/water-cycle")
+@app.post("/api/beds/{bed_id}/water-cycle", dependencies=[Depends(verify_api_key)])
 def water_cycle(bed_id: str, valve_state: str):
 
     now = datetime.utcnow()
