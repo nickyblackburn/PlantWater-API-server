@@ -839,6 +839,7 @@ body {
 .card {
     background:#1b1f2a;
     border:1px solid #2a2f3a;
+    transition: all 0.2s ease;
 }
 
 .navbar {
@@ -855,9 +856,17 @@ body {
     color:#9aa4b2;
 }
 
-.clickable-title {
-    cursor:pointer;
+/* 🌿 clickable cards */
+.clickable-card {
+    cursor: pointer;
 }
+
+.clickable-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 0 15px rgba(0,255,154,0.15);
+    border-color: #00ff9a;
+}
+
 </style>
 </head>
 
@@ -945,7 +954,7 @@ function goToBed(bedId) {
 }
 
 /* =========================
-   EDIT BED (NOW FULL DB SYNC)
+   EDIT BED (stop navigation conflict)
 ========================= */
 async function editBed(bedId) {
 
@@ -959,8 +968,8 @@ async function editBed(bedId) {
 
     const meta = { name, icon };
 
-    bedMeta[bedId] = meta;   // instant UI update
-    await saveMeta(bedId, meta); // DB update
+    bedMeta[bedId] = meta;
+    await saveMeta(bedId, meta);
 
     loadBeds();
 }
@@ -987,16 +996,16 @@ async function loadBeds() {
 
         html += `
         <div class="col-md-4 mb-3">
-            <div class="card p-3">
 
-                <h5 class="clickable-title" onclick="goToBed('${b.bed_id}')">
-                    ${icon} ${name}
-                </h5>
+            <div class="card p-3 clickable-card"
+                 onclick="goToBed('${b.bed_id}')">
+
+                <h5>${icon} ${name}</h5>
 
                 <div class="small">ID: ${b.bed_id}</div>
 
                 <button class="btn btn-sm btn-outline-light mt-2"
-                        onclick="editBed('${b.bed_id}')">
+                        onclick="event.stopPropagation(); editBed('${b.bed_id}')">
                     ✏ Edit
                 </button>
 
@@ -1027,7 +1036,7 @@ async function loadBeds() {
 }
 
 /* =========================
-   INIT (FIXED FLOW)
+   INIT
 ========================= */
 (async function init() {
     await loadMeta();
