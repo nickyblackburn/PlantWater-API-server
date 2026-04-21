@@ -37,8 +37,6 @@ valve_history = defaultdict(list)
 
 watering_sessions = {}   # active watering (temporary)
 lifetime_stats_store = {}  # permanent stats (never reset)
-bed_metadata: Dict[str, dict] = {}
-
 
 # ========================
 # Meta file

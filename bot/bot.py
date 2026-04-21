@@ -21,6 +21,13 @@ intents.message_content = True
 bot = commands.Bot(command_prefix=".", intents=intents)
 bot.remove_command("help")
 
+
+def get_bed_meta():
+    try:
+        res = requests.get(f"{API_BASE}/api/beds/meta", timeout=5)
+        return res.json()
+    except:
+        return {}
 # =========================
 # 🌱 HELP COMMAND (FIXED + CLEAN)
 # =========================
@@ -84,6 +91,7 @@ async def on_ready():
 @bot.command()
 async def status(ctx):
     data = get_bed_status()
+    meta = get_bed_meta()
 
     if not data:
         await ctx.send("❌ Could not reach irrigation API.")
@@ -98,22 +106,25 @@ async def status(ctx):
     active = []
 
     for bed_id, bed in data.items():
+
         avg = bed.get("average", 0)
         valve = bed.get("valve_state", "UNKNOWN")
 
-        # Soil state
+        # 🌿 GET USER META (name + icon)
+        bed_meta = meta.get(bed_id, {})
+        name = bed_meta.get("name", bed_id)
+        icon = bed_meta.get("icon", "🌱")
+
+        # soil state
         if avg > 650:
             state = "🏜️ Dry"
-            color = 0xe74c3c
         elif avg > 450:
             state = "🌱 Healthy"
-            color = 0x2ecc71
         else:
             state = "💧 Wet"
-            color = 0x3498db
 
         embed.add_field(
-            name=f"🌿 {bed_id}",
+            name=f"{icon} {name} (`{bed_id}`)",
             value=(
                 f"**Moisture:** `{avg:.1f}`\n"
                 f"**State:** {state}\n"
@@ -123,17 +134,14 @@ async def status(ctx):
         )
 
         if valve == "ON":
-            active.append(bed_id)
+            active.append(name)
 
-    # Footer summary
     if active:
         embed.set_footer(text=f"🚰 Watering: {', '.join(active)}")
     else:
         embed.set_footer(text="🟢 System idle — no watering active")
 
     await ctx.send(embed=embed)
-
-
 # =========================
 # ▶️ START BOT
 # =========================
