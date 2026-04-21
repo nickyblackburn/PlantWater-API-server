@@ -772,7 +772,7 @@ def health():
     return {"status": "alive"}
 
 
-@app.delete("/api/cleanup")
+@app.delete("/api/cleanup", dependencies=[Depends(verify_api_key)])
 def cleanup(db: Session = Depends(get_db)):
     """
     Delete historical data older than 7 days.
