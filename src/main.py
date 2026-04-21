@@ -28,6 +28,9 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from sklearn.ensemble import RandomForestClassifier
 import numpy as np
 
+from collections import defaultdict
+
+valve_history = defaultdict(list)
 
 watering_sessions = {}   # active watering (temporary)
 lifetime_stats = {}      # permanent stats (never reset)
@@ -848,7 +851,7 @@ body {
 
     <div class="navbar-nav">
       <a class="nav-link" href="/">Dashboard</a>
-      <a class="nav-link" href="/health-dashboard">Intelligence</a>
+      <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
       <a class="nav-link" href="/about">About</a>
     </div>
 
@@ -869,6 +872,17 @@ Loading weather...
 
 </div>
 
+<footer style="text-align:center; padding:20px; color:#9aa4b2; border-top:1px solid #2a2f3a; margin-top:40px;">
+
+    <div style="margin-bottom:10px;">
+        Made with 💖 Nicky Blackburn
+    </div>
+
+    <a href="/about" class="btn btn-outline-light btn-sm">
+        About This Project
+    </a>
+
+</footer>
 <script>
 
 /* =========================
@@ -1074,7 +1088,7 @@ def about_page():
 
     <div class="hero">
         <h1 class="glow">🌱 Smart Garden System</h1>
-        <p style="color: #ffffff;">IoT irrigation simulation with weather-aware automation</p>
+        <p style="color: #ffffff;">IoT irrigation system with weather-aware automation</p>
     </div>
 
     <!-- ABOUT -->
@@ -1222,7 +1236,17 @@ select {
 </div>
 
 </div>
+<footer style="text-align:center; padding:20px; color:#9aa4b2; border-top:1px solid #2a2f3a; margin-top:40px;">
 
+    <div style="margin-bottom:10px;">
+        Made with 💖 Nicky Blackburn
+    </div>
+
+    <a href="/about" class="btn btn-outline-light btn-sm">
+        About This Project
+    </a>
+
+</footer>
 <script>
 
 let chart = null;
@@ -1547,29 +1571,32 @@ def lifetime_stats(bed_id: str, db: Session = Depends(get_db)):
     }
 
 
+from datetime import datetime
+
 @app.post("/api/beds/{bed_id}/water-cycle")
 def water_cycle(bed_id: str, valve_state: str):
-    """
-    Handles lifecycle of watering cycles:
-    - ON  = start cycle
-    - OFF = end cycle + commit stats
-    """
 
     now = datetime.utcnow()
 
-    # init lifetime bucket
+    # -------------------------
+    # INIT STORAGE
+    # -------------------------
     if bed_id not in lifetime_stats:
         lifetime_stats[bed_id] = {
             "times_watered": 0,
             "total_seconds": 0
         }
 
-    # =========================
-    # 🌱 START WATERING
-    # =========================
+    if bed_id not in watering_sessions:
+        watering_sessions[bed_id] = None
+
+    # -------------------------
+    # 🟢 START WATERING
+    # -------------------------
     if valve_state == "ON":
 
-        if bed_id not in watering_sessions:
+        # only start if not already running
+        if watering_sessions[bed_id] is None:
             watering_sessions[bed_id] = {
                 "start": now
             }
@@ -1579,21 +1606,22 @@ def water_cycle(bed_id: str, valve_state: str):
             "state": "started"
         }
 
-    # =========================
-    # 🔴 END WATERING
-    # =========================
+    # -------------------------
+    # 🔴 STOP WATERING
+    # -------------------------
     if valve_state == "OFF":
 
         session = watering_sessions.get(bed_id)
 
-        if session:
+        # only count if session exists
+        if session is not None:
 
             duration = (now - session["start"]).total_seconds()
 
             lifetime_stats[bed_id]["times_watered"] += 1
             lifetime_stats[bed_id]["total_seconds"] += duration
 
-            del watering_sessions[bed_id]
+            watering_sessions[bed_id] = None
 
             return {
                 "bed_id": bed_id,
@@ -1601,13 +1629,16 @@ def water_cycle(bed_id: str, valve_state: str):
                 "duration_sec": duration
             }
 
+        # OFF but no session = ignore safely
+        return {
+            "bed_id": bed_id,
+            "state": "ignored_no_session"
+        }
+
     return {
         "bed_id": bed_id,
         "state": "no_change"
     }
-
-
-
 
 @app.get("/api/beds/{bed_id}/lifetime")
 def lifetime_stats_endpoint(bed_id: str):

@@ -8,7 +8,7 @@ SERVER = "http://127.0.0.1:8000"
 BEDS = ["bed_1", "bed_2", "bed_3", "bed_4"]
 
 soil_state = {
-    bed: random.uniform(300, 700)
+    bed: random.uniform(300, 800)
     for bed in BEDS
 }
 
