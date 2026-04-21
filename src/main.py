@@ -10,7 +10,7 @@ from http.client import HTTPException
 import json
 import os
 
-from fastapi import Body, FastAPI, Depends
+from fastapi import Body, FastAPI, Depends, Header
 
 # Import Pydantic for request/response validation
 from fastapi.responses import HTMLResponse
@@ -48,6 +48,8 @@ global_weather = {"will_rain": False, "raw": None, "last_update": None}
 active_valves = {}  # bed_id -> {"state": "ON/OFF", "until": datetime}
 
 # Initialize FastAPI application with title and description
+API_KEY = "your_super_secret_key"
+API_KEY_NAME = "x-api-key"
 
 app = FastAPI(title="Smart Irrigation System")
 
@@ -244,6 +246,16 @@ class BedConfig(BaseModel):
     sampling_interval_sec: Optional[int] = None
 
 
+
+# ============================================================
+# 🔐 API KEY VERIFICATION
+# ============================================================
+
+def verify_api_key(x_api_key: str = Header(None)):
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
 # ============================================================
 # 🌧️ WEATHER DATA RETRIEVAL & CACHING
 # ============================================================
@@ -279,7 +291,7 @@ def get_weather():
 # ============================================================
 
 
-@app.post("/api/bed-data")
+@app.post("/api/bed-data",dependencies=[Depends(verify_api_key)])
 def receive_data(data: BedData, db: Session = Depends(get_db)):
     """
     Accept and store sensor readings from ESP32 microcontroller.
@@ -324,6 +336,7 @@ def receive_data(data: BedData, db: Session = Depends(get_db)):
             rssi=data.rssi,
             sensors=data.sensors,
             weather=weather,
+            
         )
 
         # Add reading to session and commit to database
