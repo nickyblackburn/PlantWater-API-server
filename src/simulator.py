@@ -5,40 +5,34 @@ from datetime import datetime, timedelta
 
 SERVER = "http://127.0.0.1:8000"
 
+API_KEY = "your_super_secret_key"
+HEADERS = {"x-api-key": API_KEY}
 
 BEDS = [f"bed_{i}" for i in range(1, 5)]
-
 
 soil_state = {
     bed: random.uniform(300, 800)
     for bed in BEDS
 }
 
-# 💧 track irrigation "active watering"
 watering_state = {
-    bed: None  # stores end time if watering
+    bed: None
     for bed in BEDS
 }
 
 
 def simulate_sensor(bed_id):
-    """
-    soil slowly dries + irrigation slowly raises it
-    """
-
     base = soil_state[bed_id]
 
-    # 🌵 drying effect
+    # 🌵 drying
     base -= random.uniform(0.5, 3)
 
-    # 💧 if watering is active, gently increase moisture
+    # 💧 watering effect
     now = datetime.utcnow()
     if watering_state[bed_id] and now < watering_state[bed_id]:
         base += random.uniform(5, 15)
 
-    # noise
     value = base + random.uniform(-5, 5)
-
     value = max(200, min(850, value))
 
     soil_state[bed_id] = value
@@ -60,7 +54,11 @@ def send_data(bed_id, sensors, avg, valve_state):
     }
 
     try:
-        r = requests.post(f"{SERVER}/api/bed-data", json=payload)
+        r = requests.post(
+            f"{SERVER}/api/bed-data",
+            json=payload,
+            headers=HEADERS   # 🔐 PROTECTED
+        )
         return r.json()
     except Exception as e:
         print("server down:", e)
@@ -74,54 +72,57 @@ def check_watering(bed_id, avg):
             params={
                 "bed_id": bed_id,
                 "average_moisture": avg
-            }
+            },
+            headers=HEADERS   # 🔐 PROTECTED
         )
         return r.json()
     except:
         return None
 
 
-def apply_watering_effect(bed_id, decision):
-    """
-    when watering happens, simulate duration
-    """
+def report_valve_change(bed_id, valve_state):
+    try:
+        requests.post(
+            f"{SERVER}/api/beds/{bed_id}/water-cycle",
+            params={"valve_state": valve_state},
+            headers=HEADERS   # 🔐 PROTECTED
+        )
+    except:
+        pass
 
+
+def apply_watering_effect(bed_id, decision):
     if decision and decision.get("water"):
 
-        duration = 3  # match your backend default
-
+        duration = 3
         watering_state[bed_id] = datetime.utcnow() + timedelta(seconds=duration)
-        # when watering starts
+
+        # 🟢 start
         report_valve_change(bed_id, "ON")
 
-        # when watering ends
-        report_valve_change(bed_id, "OFF")
+        # 🔴 stop AFTER duration (this was missing realism 👀)
+        def stop_later():
+            time.sleep(duration)
+            report_valve_change(bed_id, "OFF")
+
+        import threading
+        threading.Thread(target=stop_later).start()
 
         print(f"💧 {bed_id} watering for {duration}s")
-
-
-def report_valve_change(bed_id, valve_state):
-    requests.post(
-        f"{SERVER}/api/beds/{bed_id}/water-cycle",
-        params={"valve_state": valve_state}
-    )
 
 
 def run():
     print("🌿 irrigation simulator starting...")
 
     while True:
-
         for bed in BEDS:
 
             sensors, avg = simulate_sensor(bed)
-
             decision = check_watering(bed, avg)
 
             if decision:
                 apply_watering_effect(bed, decision)
 
-            # 🚰 correct valve state reporting
             now = datetime.utcnow()
             valve = "ON" if watering_state[bed] and now < watering_state[bed] else "OFF"
 
