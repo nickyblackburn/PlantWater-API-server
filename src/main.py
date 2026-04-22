@@ -747,7 +747,12 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
     # if still in rain pause → NO water
     if now < rain_pause.get(bed_id, datetime.min):
         return {"water": False}
+    
+    last = last_watered.get(bed_id)
 
+    if last and (now - last).total_seconds() < config.cooldown_sec:
+        return {"water": False}
+    
     # 💧 THIS is the missing piece
     if water:
         active_valves[bed_id] = {
