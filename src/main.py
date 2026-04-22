@@ -1280,11 +1280,60 @@ def garden_health_page():
 body {
     background:#0f1115;
     color:white;
+    font-family: system-ui, sans-serif;
 }
 
+/* =========================
+   GLASS CARDS
+========================= */
 .card {
-    background:#1b1f2a;
-    border:1px solid #2a2f3a;
+    background: rgba(27, 31, 42, 0.85);
+    border: 1px solid rgba(42, 47, 58, 0.6);
+    border-radius: 18px;
+    backdrop-filter: blur(10px);
+}
+
+/* =========================
+   SYSTEM METRICS
+========================= */
+.metric .label {
+    font-size: 12px;
+    color: #9aa4b2;
+}
+
+.metric .value {
+    font-size: 28px;
+    font-weight: 700;
+}
+
+.metric.good .value {
+    color: #00ff9a;
+}
+
+.metric.danger .value {
+    color: #ff4d4d;
+}
+
+/* =========================
+   CONTROL BUTTONS
+========================= */
+button.btn {
+    border-radius: 12px;
+}
+
+/* =========================
+   MINI STATUS BAR
+========================= */
+.mini-status {
+    border-left: 3px solid #00ff9a;
+}
+
+/* =========================
+   NAV
+========================= */
+.navbar {
+    background:#0b0d10;
+    border-bottom:1px solid #2a2f3a;
 }
 
 select {
@@ -1292,12 +1341,13 @@ select {
     color:white !important;
     border:1px solid #2a2f3a !important;
 }
+
 </style>
 </head>
 
 <body>
 
-<nav class="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-secondary">
+<nav class="navbar navbar-expand-lg navbar-dark">
   <div class="container-fluid">
 
     <a class="navbar-brand" href="/">🌱 Smart Garden</a>
@@ -1313,39 +1363,98 @@ select {
 
 <div class="container py-4">
 
-<h1 class="mb-4">🌿 Garden Intelligence</h1>
+<h1 class="mb-3">🌿 Garden Intelligence</h1>
 
+<!-- =========================
+     SYSTEM OVERVIEW
+========================= -->
+<div class="card p-4 mb-4">
 
-<select id="bedSelect" class="form-select mb-3"></select>
+    <h5 class="mb-3">🧠 System Overview</h5>
 
-<div class="card p-3 mb-3">
-    <div id="liveStatus">Loading...</div>
+    <div class="row text-center">
+
+        <div class="col">
+            <div class="metric">
+                <div class="label">Total Beds</div>
+                <div class="value" id="totalBeds">-</div>
+            </div>
+        </div>
+
+        <div class="col">
+            <div class="metric danger">
+                <div class="label">Dry Beds</div>
+                <div class="value" id="dryBeds">-</div>
+            </div>
+        </div>
+
+        <div class="col">
+            <div class="metric good">
+                <div class="label">Watering Now</div>
+                <div class="value" id="wateringBeds">-</div>
+            </div>
+        </div>
+
+    </div>
 </div>
 
-<div class="card p-3">
+<!-- =========================
+     CONTROL PANEL
+========================= -->
+<div class="card p-4 mb-4">
+
+    <h5 class="mb-3">⚙️ Control Console</h5>
+
+    <div id="actionResult" class="mb-3 text-muted"></div>
+
+    <div class="d-flex gap-2 flex-wrap">
+
+        <button class="btn btn-success" onclick="waterAll(3)">💧 Water All</button>
+        <button class="btn btn-outline-light" onclick="setAllMode('eco')">🌿 Eco Mode</button>
+        <button class="btn btn-outline-light" onclick="setAllMode('normal')">⚙️ Normal Mode</button>
+        <button class="btn btn-danger" onclick="emergencyStop()">🛑 Stop All</button>
+
+    </div>
+
+</div>
+
+<!-- =========================
+     BED SELECT
+========================= -->
+<div class="card p-4 mb-3">
+
+    <h5 class="mb-3">🌱 Active Bed</h5>
+
+    <select id="bedSelect" class="form-select mb-3"></select>
+
+    <div class="card p-3 mini-status">
+        <div id="liveStatus">Loading...</div>
+    </div>
+
+</div>
+
+<!-- =========================
+     CHART
+========================= -->
+<div class="card p-4">
+    <h5 class="mb-3">📈 Moisture Trends</h5>
     <canvas id="chart"></canvas>
 </div>
 
 </div>
 
 <footer style="text-align:center; padding:20px; color:#9aa4b2; border-top:1px solid #2a2f3a; margin-top:40px;">
-    <div style="margin-bottom:10px;">
-        Made with 💖 Nicky Blackburn
-    </div>
-
-    <a href="/about" class="btn btn-outline-light btn-sm">
-        About This Project
-    </a>
+    Made with 💖 Nicky Blackburn
 </footer>
 
 <script>
 
 let chart = null;
 let currentBed = null;
-let bedMeta = {}; // ⭐ NEW
+let bedMeta = {};
 
 /* =========================
-   LOAD META
+   META
 ========================= */
 async function loadMeta() {
     const res = await fetch("/api/beds/meta");
@@ -1353,85 +1462,88 @@ async function loadMeta() {
 }
 
 /* =========================
-   GET URL PARAM
+   SYSTEM OVERVIEW
 ========================= */
-function getBedFromURL() {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("bed");
-}
-
-/* =========================
-   CREATE CHART
-========================= */
-function createChart(data) {
-    const ctx = document.getElementById("chart");
-
-    chart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: data?.timestamps || [],
-            datasets: [
-                {
-                    label: 'Soil Moisture',
-                    data: data?.moisture || [],
-                    borderWidth: 2,
-                    tension: 0.3,
-                    yAxisID: 'y'
-                },
-                {
-                    label: 'Valve State',
-                    data: data?.valve || [],
-                    stepped: true,
-                    borderWidth: 2,
-                    yAxisID: 'y2'
-                }
-            ]
-        },
-        options: {
-            animation: false,
-            responsive: true,
-            scales: {
-                y: {
-                    position: 'left',
-                    title: { display: true, text: 'Moisture' }
-                },
-                y2: {
-                    position: 'right',
-                    min: 0,
-                    max: 1,
-                    grid: { drawOnChartArea: false }
-                }
-            }
-        }
-    });
-}
-
-/* =========================
-   UPDATE CHART
-========================= */
-function updateChart(data) {
-    if (!chart || !data) return;
-
-    chart.data.labels = data.timestamps || [];
-    chart.data.datasets[0].data = data.moisture || [];
-    chart.data.datasets[1].data = data.valve || [];
-
-    chart.update();
-}
-
-/* =========================
-   LOAD GRAPH
-========================= */
-async function loadGraph(bed) {
-    const res = await fetch(`/api/beds/${bed}/full-graph`);
+async function loadSystemOverview() {
+    const res = await fetch("/api/system/overview");
     const data = await res.json();
 
-    if (!chart) createChart(data);
-    else updateChart(data);
+    document.getElementById("totalBeds").innerText = data.total_beds;
+    document.getElementById("dryBeds").innerText = data.dry_beds;
+    document.getElementById("wateringBeds").innerText = data.watering_beds;
 }
 
 /* =========================
-   LIVE STATUS (✨ FIXED TITLE)
+   ACTION FEEDBACK
+========================= */
+function showAction(msg) {
+    document.getElementById("actionResult").innerText = msg;
+}
+
+/* =========================
+   CONTROL ACTIONS
+========================= */
+async function waterAll(seconds=3) {
+    await fetch(`/api/system/water-all?duration=${seconds}`, {
+        method: "POST",
+        headers: { "x-api-key": API_KEY }
+    });
+
+    showAction("💧 Watering all beds...");
+}
+
+async function setAllMode(mode) {
+    await fetch(`/api/system/mode-all?mode=${mode}`, {
+        method: "POST",
+        headers: { "x-api-key": API_KEY }
+    });
+
+    showAction("🌿 Mode set to " + mode);
+}
+
+async function emergencyStop() {
+    await fetch("/api/system/emergency-stop", {
+        method: "POST",
+        headers: { "x-api-key": API_KEY }
+    });
+
+    showAction("🛑 Emergency stop activated!");
+}
+
+/* =========================
+   BEDS
+========================= */
+async function loadBeds() {
+    const beds = await fetch('/api/beds').then(r => r.json());
+    const meta = await fetch('/api/beds/meta').then(r => r.json());
+
+    const select = document.getElementById("bedSelect");
+    select.innerHTML = "";
+
+    for (const bed in beds) {
+        const m = meta[bed] || {};
+        const opt = document.createElement("option");
+
+        opt.value = bed;
+        opt.text = `${m.icon || "🌱"} ${m.name || bed}`;
+
+        select.appendChild(opt);
+    }
+
+    currentBed = select.value;
+
+    loadGraph(currentBed);
+    loadStatus();
+
+    select.onchange = () => {
+        currentBed = select.value;
+        loadGraph(currentBed);
+        loadStatus();
+    };
+}
+
+/* =========================
+   STATUS
 ========================= */
 async function loadStatus() {
     if (!currentBed) return;
@@ -1442,96 +1554,74 @@ async function loadStatus() {
     const b = data[currentBed];
     if (!b) return;
 
-    let status = "🟢 Healthy";
+    const meta = bedMeta[currentBed] || {};
 
+    let status = "🟢 Healthy";
     if (b.average > 700) status = "🔴 Dry";
     else if (b.average < 300) status = "🔵 Too Wet";
 
-    // ⭐ USE META HERE
-    const meta = bedMeta[currentBed] || {};
-    const name = meta.name || currentBed;
-    const icon = meta.icon || "🌱";
-
     document.getElementById("liveStatus").innerHTML = `
-        <h5 style="font-weight:600; font-size:20px;">
-            ${icon} ${name}
-        </h5>
-        <p>💧 Moisture: ${b.average.toFixed(1)}</p>
-        <p>🚰 Valve: ${b.valve_state}</p>
-        <p>${status}</p>
+        <h5>${meta.icon || "🌱"} ${meta.name || currentBed}</h5>
+        <div>💧 ${b.average.toFixed(1)}</div>
+        <div>🚰 ${b.valve_state}</div>
+        <div class="mt-2">${status}</div>
     `;
 }
 
 /* =========================
-   LOAD BEDS
+   CHART
 ========================= */
-async function loadBeds() {
-    const bedsRes = await fetch('/api/beds');
-    const beds = await bedsRes.json();
+function createChart(data) {
+    const ctx = document.getElementById("chart");
 
-    const metaRes = await fetch('/api/beds/meta');
-    const meta = await metaRes.json();
-
-    const select = document.getElementById("bedSelect");
-    select.innerHTML = "";
-
-    const selectedFromURL = getBedFromURL();
-
-    for (const bed in beds) {
-
-        const m = meta[bed] || {};
-        const name = m.name || bed;
-        const icon = m.icon || "🌱";
-
-        const opt = document.createElement("option");
-        opt.value = bed;
-
-        // ✨ THIS is the important part
-        opt.text = `${icon} ${name}`;
-
-        select.appendChild(opt);
-    }
-
-    // select correct bed
-    if (selectedFromURL && beds[selectedFromURL]) {
-        currentBed = selectedFromURL;
-        select.value = selectedFromURL;
-    } else {
-        currentBed = select.value;
-    }
-
-    loadGraph(currentBed);
-    loadStatus();
-
-    select.addEventListener("change", () => {
-        currentBed = select.value;
-
-        window.history.replaceState(null, "", `?bed=${currentBed}`);
-
-        loadGraph(currentBed);
-        loadStatus();
+    chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.timestamps,
+            datasets: [
+                {
+                    label: 'Moisture',
+                    data: data.moisture,
+                    borderWidth: 2,
+                    tension: 0.3
+                },
+                {
+                    label: 'Valve',
+                    data: data.valve,
+                    stepped: true
+                }
+            ]
+        },
+        options: {
+            animation: false
+        }
     });
 }
 
-/* =========================
-   LIVE LOOP
-========================= */
-function startLive() {
-    setInterval(() => {
-        if (currentBed) {
-            loadGraph(currentBed);
-            loadStatus();
-        }
-    }, 3000);
+function updateChart(data) {
+    chart.data.labels = data.timestamps;
+    chart.data.datasets[0].data = data.moisture;
+    chart.data.datasets[1].data = data.valve;
+    chart.update();
+}
+
+async function loadGraph(bed) {
+    const data = await fetch(`/api/beds/${bed}/full-graph`).then(r => r.json());
+
+    if (!chart) createChart(data);
+    else updateChart(data);
 }
 
 /* =========================
-   INIT (✨ UPDATED)
+   INIT
 ========================= */
 (async function init() {
-    await loadMeta(); // ⭐ IMPORTANT
+    await loadMeta();
     await loadBeds();
-    startLive();
+    await loadSystemOverview();
+
+    setInterval(loadSystemOverview, 5000);
+    setInterval(loadStatus, 3000);
 })();
 
 </script>
