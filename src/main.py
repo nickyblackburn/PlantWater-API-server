@@ -36,9 +36,13 @@ from collections import defaultdict
 
 valve_history = defaultdict(list)
 
-watering_sessions = {}   # active watering (temporary)
+watering_sessions = {}  # active watering (temporary)
 lifetime_stats_store = {}  # permanent stats (never reset)
+rain_memory = {}  # bed_id → last spike time
+bed_state = {} # bed_id → current state (DRY, WET, WATERING, etc.)
 
+last_watered = {}   # remembers last time each bed got water
+rain_pause = {}     # remembers "hey it rained, chill for a bit"
 
 # ============================================================
 # 🧠 APP SETUP & DATABASE CONFIGURATION
@@ -96,6 +100,7 @@ class BedMetaDB(Base):
     name = Column(String, default="")
     icon = Column(String, default="🌱")
 
+
 # BedReading: Records sensor data from a plant bed at specific timestamps
 # Each reading captures all sensors' measurements and system state
 class BedReading(Base):
@@ -123,8 +128,7 @@ class BedReading(Base):
     # Current state of irrigation valve (e.g., "ON", "OFF", "COOLDOWN")
     valve_state = Column(String)
 
-
-    #weather data at time of reading (optional, can be null if API call fails)
+    # weather data at time of reading (optional, can be null if API call fails)
     weather = Column(JSON, nullable=True)
 
     # Wireless signal strength indicator (WiFi RSSI in dBm)
@@ -212,7 +216,6 @@ class BedData(BaseModel):
 
     # Array of individual sensor readings (moisture values)
     sensors: List[float]
-    
 
     # Calculated average moisture level across all sensors
     average: float
@@ -246,14 +249,24 @@ class BedConfig(BaseModel):
     sampling_interval_sec: Optional[int] = None
 
 
-
 # ============================================================
 # 🔐 API KEY VERIFICATION
 # ============================================================
 
+
 def verify_api_key(x_api_key: str = Header(None)):
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
+############################################################
+## rain memory system to prevent watering right after a rain spike is detected
+############################################################
+def is_rain_spike(bed_id, current, previous):
+    if previous is None:
+        return False
+
+    return (current - previous) > 120  # tune this threshold based on real data
 
 
 # ============================================================
@@ -291,7 +304,7 @@ def get_weather():
 # ============================================================
 
 
-@app.post("/api/bed-data",dependencies=[Depends(verify_api_key)])
+@app.post("/api/bed-data", dependencies=[Depends(verify_api_key)])
 def receive_data(data: BedData, db: Session = Depends(get_db)):
     """
     Accept and store sensor readings from ESP32 microcontroller.
@@ -336,7 +349,6 @@ def receive_data(data: BedData, db: Session = Depends(get_db)):
             rssi=data.rssi,
             sensors=data.sensors,
             weather=weather,
-            
         )
 
         # Add reading to session and commit to database
@@ -712,6 +724,8 @@ def update_config(bed_id: str, config: BedConfig, db: Session = Depends(get_db))
 @app.post("/api/should-water", dependencies=[Depends(verify_api_key)])
 def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get_db)):
 
+    now = datetime.utcnow()
+
     config = db.query(BedConfigDB).filter(BedConfigDB.bed_id == bed_id).first()
 
     if not config:
@@ -726,7 +740,13 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
 
     water = soil_dry and not rain_expected
 
-    now = datetime.utcnow()
+        # if it's raining → pause watering for 30 mins
+    if weather["is_raining_now"]:
+        rain_pause[bed_id] = now + timedelta(minutes=30)
+
+    # if still in rain pause → NO water
+    if now < rain_pause.get(bed_id, datetime.min):
+        return {"water": False}
 
     # 💧 THIS is the missing piece
     if water:
@@ -827,6 +847,7 @@ def latest(db: Session = Depends(get_db)):
             }
 
     return seen
+
 
 #################################
 # main entry point for running the API server
@@ -1064,7 +1085,9 @@ async function loadBeds() {
 </body>
 </html>
 """
-#=======================================================
+
+
+# =======================================================
 # 📖 ABOUT PAGE
 # ============================================================
 
@@ -1262,6 +1285,7 @@ Dashboard UI (Chart.js)
 </html>
 """
 
+
 #########################################
 # Per bed Display of latest reading and valve state
 #########################################
@@ -1294,7 +1318,7 @@ body {
 }
 
 /* =========================
-   SYSTEM METRICS
+   METRICS
 ========================= */
 .metric .label {
     font-size: 12px;
@@ -1306,27 +1330,8 @@ body {
     font-weight: 700;
 }
 
-.metric.good .value {
-    color: #00ff9a;
-}
-
-.metric.danger .value {
-    color: #ff4d4d;
-}
-
-/* =========================
-   CONTROL BUTTONS
-========================= */
-button.btn {
-    border-radius: 12px;
-}
-
-/* =========================
-   MINI STATUS BAR
-========================= */
-.mini-status {
-    border-left: 3px solid #00ff9a;
-}
+.metric.good .value { color: #00ff9a; }
+.metric.danger .value { color: #ff4d4d; }
 
 /* =========================
    NAV
@@ -1341,7 +1346,6 @@ select {
     color:white !important;
     border:1px solid #2a2f3a !important;
 }
-
 </style>
 </head>
 
@@ -1398,9 +1402,8 @@ select {
     </div>
 </div>
 
-
 <!-- =========================
-     BED SELECT
+     ACTIVE BED
 ========================= -->
 <div class="card p-4 mb-3">
 
@@ -1408,9 +1411,7 @@ select {
 
     <select id="bedSelect" class="form-select mb-3"></select>
 
-    <div class="card p-3 mini-status">
-        <div id="liveStatus">Loading...</div>
-    </div>
+    <div class="p-3" id="liveStatus">Loading...</div>
 
 </div>
 
@@ -1434,17 +1435,28 @@ let chart = null;
 let currentBed = null;
 let bedMeta = {};
 
-/* =========================
-   META
-========================= */
+// =========================
+// URL SYNC
+// =========================
+function getBedFromURL() {
+    return new URLSearchParams(window.location.search).get("bed");
+}
+
+function setBedURL(bed) {
+    window.history.replaceState(null, "", `?bed=${bed}`);
+}
+
+// =========================
+// META
+// =========================
 async function loadMeta() {
     const res = await fetch("/api/beds/meta");
     bedMeta = await res.json();
 }
 
-/* =========================
-   SYSTEM OVERVIEW
-========================= */
+// =========================
+// SYSTEM OVERVIEW
+// =========================
 async function loadSystemOverview() {
     const res = await fetch("/api/system/overview");
     const data = await res.json();
@@ -1454,52 +1466,17 @@ async function loadSystemOverview() {
     document.getElementById("wateringBeds").innerText = data.watering_beds;
 }
 
-/* =========================
-   ACTION FEEDBACK
-========================= */
-function showAction(msg) {
-    document.getElementById("actionResult").innerText = msg;
-}
-
-/* =========================
-   CONTROL ACTIONS
-========================= */
-async function waterAll(seconds=3) {
-    await fetch(`/api/system/water-all?duration=${seconds}`, {
-        method: "POST",
-        headers: { "x-api-key": API_KEY }
-    });
-
-    showAction("💧 Watering all beds...");
-}
-
-async function setAllMode(mode) {
-    await fetch(`/api/system/mode-all?mode=${mode}`, {
-        method: "POST",
-        headers: { "x-api-key": API_KEY }
-    });
-
-    showAction("🌿 Mode set to " + mode);
-}
-
-async function emergencyStop() {
-    await fetch("/api/system/emergency-stop", {
-        method: "POST",
-        headers: { "x-api-key": API_KEY }
-    });
-
-    showAction("🛑 Emergency stop activated!");
-}
-
-/* =========================
-   BEDS
-========================= */
+// =========================
+// BED SELECT (FIXED)
+// =========================
 async function loadBeds() {
     const beds = await fetch('/api/beds').then(r => r.json());
     const meta = await fetch('/api/beds/meta').then(r => r.json());
 
     const select = document.getElementById("bedSelect");
     select.innerHTML = "";
+
+    const urlBed = getBedFromURL();
 
     for (const bed in beds) {
         const m = meta[bed] || {};
@@ -1511,21 +1488,31 @@ async function loadBeds() {
         select.appendChild(opt);
     }
 
-    currentBed = select.value;
+    // choose correct bed
+    if (urlBed && beds[urlBed]) {
+        currentBed = urlBed;
+    } else {
+        currentBed = Object.keys(beds)[0];
+    }
+
+    select.value = currentBed;
 
     loadGraph(currentBed);
     loadStatus();
 
     select.onchange = () => {
         currentBed = select.value;
+
+        setBedURL(currentBed);
+
         loadGraph(currentBed);
         loadStatus();
     };
 }
 
-/* =========================
-   STATUS
-========================= */
+// =========================
+// STATUS
+// =========================
 async function loadStatus() {
     if (!currentBed) return;
 
@@ -1533,9 +1520,9 @@ async function loadStatus() {
     const data = await res.json();
 
     const b = data[currentBed];
-    if (!b) return;
-
     const meta = bedMeta[currentBed] || {};
+
+    if (!b) return;
 
     let status = "🟢 Healthy";
     if (b.average > 700) status = "🔴 Dry";
@@ -1549,9 +1536,9 @@ async function loadStatus() {
     `;
 }
 
-/* =========================
-   CHART
-========================= */
+// =========================
+// CHART
+// =========================
 function createChart(data) {
     const ctx = document.getElementById("chart");
 
@@ -1593,9 +1580,9 @@ async function loadGraph(bed) {
     else updateChart(data);
 }
 
-/* =========================
-   INIT
-========================= */
+// =========================
+// INIT
+// =========================
 (async function init() {
     await loadMeta();
     await loadBeds();
@@ -1610,6 +1597,8 @@ async function loadGraph(bed) {
 </body>
 </html>
 """
+
+
 @app.get("/api/will-rain")
 def weather_api():
     return get_weather()
@@ -1670,8 +1659,9 @@ def valve_status(bed_id: str):
     return {"bed_id": bed_id, "valve_state": "ON"}
 
     ############################################
-    #Power modes endpoints
+    # Power modes endpoints
     ################################
+
 
 @app.post("/api/beds/{bed_id}/mode")
 def set_mode(bed_id: str, mode: str):
@@ -1679,17 +1669,16 @@ def set_mode(bed_id: str, mode: str):
 
     active_valves[bed_id]["mode"] = mode
 
-    return {
-        "bed_id": bed_id,
-        "mode": mode
-    }
+    return {"bed_id": bed_id, "mode": mode}
+
 
 @app.get("/api/beds/{bed_id}/mode")
 def get_mode(bed_id: str):
     return {
         "bed_id": bed_id,
-        "mode": active_valves.get(bed_id, {}).get("mode", "normal")
+        "mode": active_valves.get(bed_id, {}).get("mode", "normal"),
     }
+
 
 @app.get("/api/beds/{bed_id}/full-graph")
 def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
@@ -1727,9 +1716,8 @@ def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
         "timestamps": timestamps,
         "moisture": moisture,
         "rain": [0] * len(timestamps),
-        "valve": valve
+        "valve": valve,
     }
-
 
 
 @app.get("/api/beds/{bed_id}/lifetime")
@@ -1763,7 +1751,7 @@ def lifetime_stats(bed_id: str, db: Session = Depends(get_db)):
         # detect OFF transition
         if r.valve_state == "OFF" and last_state == "ON":
             if last_on_time:
-                total_on_time += (r.timestamp - last_on_time)
+                total_on_time += r.timestamp - last_on_time
                 last_on_time = None
 
         last_state = r.valve_state
@@ -1773,11 +1761,12 @@ def lifetime_stats(bed_id: str, db: Session = Depends(get_db)):
         "times_watered": water_events,
         "last_watered": last_watered,
         "total_watering_minutes": round(total_on_time.total_seconds() / 60, 2),
-        "avg_moisture": sum(r.average for r in rows) / len(rows)
+        "avg_moisture": sum(r.average for r in rows) / len(rows),
     }
 
 
 from datetime import datetime
+
 
 @app.post("/api/beds/{bed_id}/water-cycle", dependencies=[Depends(verify_api_key)])
 def water_cycle(bed_id: str, valve_state: str):
@@ -1788,10 +1777,7 @@ def water_cycle(bed_id: str, valve_state: str):
     # INIT STORAGE
     # -------------------------
     if bed_id not in lifetime_stats_store:
-        lifetime_stats_store[bed_id] = {
-            "times_watered": 0,
-            "total_seconds": 0
-        }
+        lifetime_stats_store[bed_id] = {"times_watered": 0, "total_seconds": 0}
 
     if bed_id not in watering_sessions:
         watering_sessions[bed_id] = None
@@ -1803,14 +1789,9 @@ def water_cycle(bed_id: str, valve_state: str):
 
         # only start if not already running
         if watering_sessions[bed_id] is None:
-            watering_sessions[bed_id] = {
-                "start": now
-            }
+            watering_sessions[bed_id] = {"start": now}
 
-        return {
-            "bed_id": bed_id,
-            "state": "started"
-        }
+        return {"bed_id": bed_id, "state": "started"}
 
     # -------------------------
     # 🔴 STOP WATERING
@@ -1829,42 +1810,28 @@ def water_cycle(bed_id: str, valve_state: str):
 
             watering_sessions[bed_id] = None
 
-            return {
-                "bed_id": bed_id,
-                "state": "stopped",
-                "duration_sec": duration
-            }
+            return {"bed_id": bed_id, "state": "stopped", "duration_sec": duration}
 
         # OFF but no session = ignore safely
-        return {
-            "bed_id": bed_id,
-            "state": "ignored_no_session"
-        }
+        return {"bed_id": bed_id, "state": "ignored_no_session"}
 
-    return {
-        "bed_id": bed_id,
-        "state": "no_change"
-    }
+    return {"bed_id": bed_id, "state": "no_change"}
+
 
 @app.get("/api/beds/{bed_id}/lifetime")
 def lifetime_stats_endpoint(bed_id: str):
 
-    stats = lifetime_stats.get(bed_id, {
-        "times_watered": 0,
-        "total_seconds": 0
-    })
+    stats = lifetime_stats.get(bed_id, {"times_watered": 0, "total_seconds": 0})
 
     return {
         "bed_id": bed_id,
         "times_watered": stats["times_watered"],
-        "total_watering_minutes": round(stats["total_seconds"] / 60, 2)
+        "total_watering_minutes": round(stats["total_seconds"] / 60, 2),
     }
+
+
 @app.post("/api/beds/{bed_id}/meta")
-def save_bed_meta(
-    bed_id: str,
-    data: dict = Body(...),
-    db: Session = Depends(get_db)
-):
+def save_bed_meta(bed_id: str, data: dict = Body(...), db: Session = Depends(get_db)):
 
     row = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
 
@@ -1878,43 +1845,25 @@ def save_bed_meta(
     db.commit()
     db.refresh(row)
 
-    return {
-        "ok": True,
-        "bed_id": bed_id,
-        "meta": {
-            "name": row.name,
-            "icon": row.icon
-        }
-    }
+    return {"ok": True, "bed_id": bed_id, "meta": {"name": row.name, "icon": row.icon}}
+
 
 @app.get("/api/beds/{bed_id}/meta")
 def get_bed_meta(bed_id: str, db: Session = Depends(get_db)):
     row = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
 
     if not row:
-        return {
-            "bed_id": bed_id,
-            "name": bed_id,
-            "icon": "🌱"
-        }
+        return {"bed_id": bed_id, "name": bed_id, "icon": "🌱"}
 
-    return {
-        "bed_id": bed_id,
-        "name": row.name,
-        "icon": row.icon
-    }
+    return {"bed_id": bed_id, "name": row.name, "icon": row.icon}
+
 
 @app.get("/api/beds/meta")
 def get_all_bed_meta(db: Session = Depends(get_db)):
     rows = db.query(BedMetaDB).all()
 
-    return {
-        r.bed_id: {
-            "name": r.name,
-            "icon": r.icon
-        }
-        for r in rows
-    }
+    return {r.bed_id: {"name": r.name, "icon": r.icon} for r in rows}
+
 
 # adddes overview endpoint to show system status at a glance
 @app.get("/api/system/overview")
@@ -1942,82 +1891,6 @@ def system_overview(db: Session = Depends(get_db)):
         "total_beds": total,
         "dry_beds": dry,
         "watering_beds": watering,
-        "healthy_beds": total - dry
+        "healthy_beds": total - dry,
     }
 
-
-@app.post("/api/system/water-all", dependencies=[Depends(verify_api_key)])
-def water_all(duration: int = 3, db: Session = Depends(get_db)):
-
-    rows = db.query(BedReading.bed_id).distinct().all()
-    now = datetime.utcnow()
-
-    for (bed_id,) in rows:
-        active_valves[bed_id] = {
-            "state": "ON",
-            "until": now + timedelta(seconds=duration)
-        }
-
-    return {
-        "status": "ok",
-        "beds_affected": len(rows),
-        "duration": duration
-    }
-
-
-@app.post("/api/system/mode-all", dependencies=[Depends(verify_api_key)])
-def set_all_mode(mode: str, db: Session = Depends(get_db)):
-
-    rows = db.query(BedReading.bed_id).distinct().all()
-
-    for (bed_id,) in rows:
-        active_valves.setdefault(bed_id, {})
-        active_valves[bed_id]["mode"] = mode
-
-    return {
-        "status": "ok",
-        "mode": mode,
-        "beds_updated": len(rows)
-    }
-
-
-@app.post("/api/system/emergency-stop", dependencies=[Depends(verify_api_key)])
-def emergency_stop(db: Session = Depends(get_db)):
-
-    now = datetime.utcnow()
-
-    for bed_id in list(active_valves.keys()):
-        active_valves[bed_id] = {
-            "state": "OFF",
-            "until": now
-        }
-
-    return {
-        "status": "emergency_stop_activated",
-        "affected_beds": len(active_valves)
-    }
-
-
-
-@app.get("/api/system/state")
-def system_state(db: Session = Depends(get_db)):
-
-    latest = {}
-    rows = db.query(BedReading).order_by(BedReading.timestamp.desc()).all()
-
-    for r in rows:
-        if r.bed_id not in latest:
-            live = active_valves.get(r.bed_id)
-
-            latest[r.bed_id] = {
-                "bed_id": r.bed_id,
-                "average": r.average,
-                "valve_state": live["state"] if live else r.valve_state,
-            }
-
-    return latest
-
-@app.post("/api/system/water-override")
-def water_override(bed_id: str, state: str):
-    override_state[bed_id] = state  # "ON" or "OFF"
-    return {"ok": True}
