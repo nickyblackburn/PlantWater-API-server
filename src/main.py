@@ -1398,25 +1398,6 @@ select {
     </div>
 </div>
 
-<!-- =========================
-     CONTROL PANEL
-========================= -->
-<div class="card p-4 mb-4">
-
-    <h5 class="mb-3">⚙️ Control Console</h5>
-
-    <div id="actionResult" class="mb-3 text-muted"></div>
-
-    <div class="d-flex gap-2 flex-wrap">
-
-        <button class="btn btn-success" onclick="waterAll(3)">💧 Water All</button>
-        <button class="btn btn-outline-light" onclick="setAllMode('eco')">🌿 Eco Mode</button>
-        <button class="btn btn-outline-light" onclick="setAllMode('normal')">⚙️ Normal Mode</button>
-        <button class="btn btn-danger" onclick="emergencyStop()">🛑 Stop All</button>
-
-    </div>
-
-</div>
 
 <!-- =========================
      BED SELECT
@@ -2035,3 +2016,8 @@ def system_state(db: Session = Depends(get_db)):
             }
 
     return latest
+
+@app.post("/api/system/water-override")
+def water_override(bed_id: str, state: str):
+    override_state[bed_id] = state  # "ON" or "OFF"
+    return {"ok": True}
