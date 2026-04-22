@@ -1315,6 +1315,7 @@ select {
 
 <h1 class="mb-4">🌿 Garden Intelligence</h1>
 
+
 <select id="bedSelect" class="form-select mb-3"></select>
 
 <div class="card p-3 mb-3">
@@ -1843,3 +1844,104 @@ def get_all_bed_meta(db: Session = Depends(get_db)):
         }
         for r in rows
     }
+
+# adddes overview endpoint to show system status at a glance
+@app.get("/api/system/overview")
+def system_overview(db: Session = Depends(get_db)):
+    rows = db.query(BedReading).order_by(BedReading.timestamp.desc()).all()
+
+    latest = {}
+    for r in rows:
+        if r.bed_id not in latest:
+            latest[r.bed_id] = r
+
+    total = len(latest)
+    dry = 0
+    watering = 0
+
+    for b in latest.values():
+        if b.average > 700:
+            dry += 1
+
+        live = active_valves.get(b.bed_id)
+        if live and live["state"] == "ON":
+            watering += 1
+
+    return {
+        "total_beds": total,
+        "dry_beds": dry,
+        "watering_beds": watering,
+        "healthy_beds": total - dry
+    }
+
+
+@app.post("/api/system/water-all", dependencies=[Depends(verify_api_key)])
+def water_all(duration: int = 3, db: Session = Depends(get_db)):
+
+    rows = db.query(BedReading.bed_id).distinct().all()
+    now = datetime.utcnow()
+
+    for (bed_id,) in rows:
+        active_valves[bed_id] = {
+            "state": "ON",
+            "until": now + timedelta(seconds=duration)
+        }
+
+    return {
+        "status": "ok",
+        "beds_affected": len(rows),
+        "duration": duration
+    }
+
+
+@app.post("/api/system/mode-all", dependencies=[Depends(verify_api_key)])
+def set_all_mode(mode: str, db: Session = Depends(get_db)):
+
+    rows = db.query(BedReading.bed_id).distinct().all()
+
+    for (bed_id,) in rows:
+        active_valves.setdefault(bed_id, {})
+        active_valves[bed_id]["mode"] = mode
+
+    return {
+        "status": "ok",
+        "mode": mode,
+        "beds_updated": len(rows)
+    }
+
+
+@app.post("/api/system/emergency-stop", dependencies=[Depends(verify_api_key)])
+def emergency_stop(db: Session = Depends(get_db)):
+
+    now = datetime.utcnow()
+
+    for bed_id in list(active_valves.keys()):
+        active_valves[bed_id] = {
+            "state": "OFF",
+            "until": now
+        }
+
+    return {
+        "status": "emergency_stop_activated",
+        "affected_beds": len(active_valves)
+    }
+
+
+
+@app.get("/api/system/state")
+def system_state(db: Session = Depends(get_db)):
+
+    latest = {}
+    rows = db.query(BedReading).order_by(BedReading.timestamp.desc()).all()
+
+    for r in rows:
+        if r.bed_id not in latest:
+            live = active_valves.get(r.bed_id)
+
+            latest[r.bed_id] = {
+                "bed_id": r.bed_id,
+                "average": r.average,
+                "valve_state": live["state"] if live else r.valve_state,
+            }
+
+    return latest
