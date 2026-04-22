@@ -1291,9 +1291,10 @@ Dashboard UI (Chart.js)
 """
 
 
-#########################################
-# Per bed Display of latest reading and valve state
-#########################################
+#########################################################
+## the health page is the "intelligence dashboard" that shows real-time sensor data, watering status, and a live-updating moisture graph for the selected bed. It uses Chart.js for visualization and fetches data from the API endpoints we defined.
+#########################################################
+
 @app.get("/health-dashboard", response_class=HTMLResponse)
 def garden_health_page():
     return """
@@ -1313,13 +1314,14 @@ body {
 }
 
 /* =========================
-   GLASS CARDS
+   CARD UI
 ========================= */
 .card {
     background: rgba(27, 31, 42, 0.85);
     border: 1px solid rgba(42, 47, 58, 0.6);
     border-radius: 18px;
     backdrop-filter: blur(10px);
+    margin-bottom: 12px;
 }
 
 /* =========================
@@ -1346,10 +1348,12 @@ body {
     border-bottom:1px solid #2a2f3a;
 }
 
-select {
-    background:#1b1f2a !important;
-    color:white !important;
-    border:1px solid #2a2f3a !important;
+/* =========================
+   CHART WRAPPER (IMPORTANT FIX)
+========================= */
+.chart-wrap {
+    position: relative;
+    height: 320px;
 }
 </style>
 </head>
@@ -1358,31 +1362,24 @@ select {
 
 <nav class="navbar navbar-expand-lg navbar-dark">
   <div class="container-fluid">
-
     <a class="navbar-brand" href="/">🌱 Smart Garden</a>
-
     <div class="navbar-nav">
       <a class="nav-link" href="/">Dashboard</a>
       <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
       <a class="nav-link" href="/docs">API Docs</a>
       <a class="nav-link" href="/about">About</a>
     </div>
-
+  </div>
 </nav>
 
 <div class="container py-4">
 
 <h1 class="mb-3">🌿 Garden Intelligence</h1>
 
-<!-- =========================
-     SYSTEM OVERVIEW
-========================= -->
-<div class="card p-4 mb-4">
-
-    <h5 class="mb-3">🧠 System Overview</h5>
-
+<!-- SYSTEM OVERVIEW -->
+<div class="card p-4">
+    <h5>🧠 System Overview</h5>
     <div class="row text-center">
-
         <div class="col">
             <div class="metric">
                 <div class="label">Total Beds</div>
@@ -1399,33 +1396,29 @@ select {
 
         <div class="col">
             <div class="metric good">
-                <div class="label">Watering Now</div>
+                <div class="label">Watering</div>
                 <div class="value" id="wateringBeds">-</div>
             </div>
         </div>
-
     </div>
 </div>
 
-<!-- =========================
-     ACTIVE BED
-========================= -->
-<div class="card p-4 mb-3">
-
-    <h5 class="mb-3">🌱 Active Bed</h5>
+<!-- ACTIVE BED -->
+<div class="card p-4">
+    <h5>🌱 Active Bed</h5>
 
     <select id="bedSelect" class="form-select mb-3"></select>
 
-    <div class="p-3" id="liveStatus">Loading...</div>
-
+    <div id="liveStatus">Loading...</div>
 </div>
 
-<!-- =========================
-     CHART
-========================= -->
+<!-- CHART -->
 <div class="card p-4">
-    <h5 class="mb-3">📈 Moisture Trends</h5>
-    <canvas id="chart"></canvas>
+    <h5>📈 Moisture Stream</h5>
+
+    <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+    </div>
 </div>
 
 </div>
@@ -1436,13 +1429,22 @@ select {
 
 <script>
 
+/* =========================
+   STATE (STREAM BUFFER)
+========================= */
+const MAX_POINTS = 60;
+
+let moistureBuffer = [];
+let valveBuffer = [];
+let labelBuffer = [];
+
 let chart = null;
 let currentBed = null;
 let bedMeta = {};
 
-// =========================
-// URL SYNC
-// =========================
+/* =========================
+   URL HELPERS
+========================= */
 function getBedFromURL() {
     return new URLSearchParams(window.location.search).get("bed");
 }
@@ -1451,17 +1453,17 @@ function setBedURL(bed) {
     window.history.replaceState(null, "", `?bed=${bed}`);
 }
 
-// =========================
-// META
-// =========================
+/* =========================
+   META
+========================= */
 async function loadMeta() {
     const res = await fetch("/api/beds/meta");
     bedMeta = await res.json();
 }
 
-// =========================
-// SYSTEM OVERVIEW
-// =========================
+/* =========================
+   OVERVIEW
+========================= */
 async function loadSystemOverview() {
     const res = await fetch("/api/system/overview");
     const data = await res.json();
@@ -1471,12 +1473,12 @@ async function loadSystemOverview() {
     document.getElementById("wateringBeds").innerText = data.watering_beds;
 }
 
-// =========================
-// BED SELECT (FIXED)
-// =========================
+/* =========================
+   BED SELECT
+========================= */
 async function loadBeds() {
+
     const beds = await fetch('/api/beds').then(r => r.json());
-    const meta = await fetch('/api/beds/meta').then(r => r.json());
 
     const select = document.getElementById("bedSelect");
     select.innerHTML = "";
@@ -1484,7 +1486,7 @@ async function loadBeds() {
     const urlBed = getBedFromURL();
 
     for (const bed in beds) {
-        const m = meta[bed] || {};
+        const m = bedMeta[bed] || {};
         const opt = document.createElement("option");
 
         opt.value = bed;
@@ -1493,31 +1495,33 @@ async function loadBeds() {
         select.appendChild(opt);
     }
 
-    // choose correct bed
-    if (urlBed && beds[urlBed]) {
-        currentBed = urlBed;
-    } else {
-        currentBed = Object.keys(beds)[0];
-    }
-
+    currentBed = urlBed && beds[urlBed] ? urlBed : Object.keys(beds)[0];
     select.value = currentBed;
 
-    loadGraph(currentBed);
-    loadStatus();
+    resetStream();
 
     select.onchange = () => {
         currentBed = select.value;
-
         setBedURL(currentBed);
-
-        loadGraph(currentBed);
-        loadStatus();
+        resetStream();
     };
 }
 
-// =========================
-// STATUS
-// =========================
+/* =========================
+   RESET STREAM ON BED SWITCH
+========================= */
+function resetStream() {
+    moistureBuffer = [];
+    valveBuffer = [];
+    labelBuffer = [];
+
+    if (chart) chart.destroy();
+    chart = null;
+}
+
+/* =========================
+   STATUS PANEL
+========================= */
 async function loadStatus() {
     if (!currentBed) return;
 
@@ -1541,62 +1545,90 @@ async function loadStatus() {
     `;
 }
 
-// =========================
-// CHART
-// =========================
-function createChart(data) {
+/* =========================
+   CHART INIT
+========================= */
+function createChart() {
     const ctx = document.getElementById("chart");
 
     chart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: data.timestamps,
+            labels: labelBuffer,
             datasets: [
                 {
                     label: 'Moisture',
-                    data: data.moisture,
+                    data: moistureBuffer,
                     borderWidth: 2,
-                    tension: 0.3
+                    tension: 0.45,
+                    pointRadius: 0
                 },
                 {
                     label: 'Valve',
-                    data: data.valve,
-                    stepped: true
+                    data: valveBuffer,
+                    stepped: true,
+                    borderWidth: 2,
+                    pointRadius: 0
                 }
             ]
         },
         options: {
-            animation: false
+            responsive: true,
+            maintainAspectRatio: false,
+
+            animation: {
+                duration: 500,
+                easing: 'linear'
+            },
+
+            scales: {
+                x: { display: false },
+                y: { beginAtZero: true }
+            }
         }
     });
 }
 
-function updateChart(data) {
-    chart.data.labels = data.timestamps;
-    chart.data.datasets[0].data = data.moisture;
-    chart.data.datasets[1].data = data.valve;
-    chart.update();
+/* =========================
+   STREAMING ENGINE
+========================= */
+async function streamUpdate() {
+    if (!currentBed) return;
+
+    const res = await fetch(`/api/beds/${currentBed}/full-graph`);
+    const data = await res.json();
+
+    const i = data.moisture.length - 1;
+
+    moistureBuffer.push(data.moisture[i]);
+    valveBuffer.push(data.valve[i]);
+    labelBuffer.push(new Date().toLocaleTimeString());
+
+    if (moistureBuffer.length > MAX_POINTS) {
+        moistureBuffer.shift();
+        valveBuffer.shift();
+        labelBuffer.shift();
+    }
+
+    if (!chart) createChart();
+    else chart.update();
 }
 
-async function loadGraph(bed) {
-    const data = await fetch(`/api/beds/${bed}/full-graph`).then(r => r.json());
-
-    if (!chart) createChart(data);
-    else updateChart(data);
-}
-
-// =========================
-// INIT
-// =========================
+/* =========================
+   INIT LOOP
+========================= */
 (async function init() {
+
     await loadMeta();
     await loadBeds();
     await loadSystemOverview();
 
     setInterval(loadSystemOverview, 5000);
     setInterval(loadStatus, 3000);
-})();
 
+    setInterval(streamUpdate, 2000);
+
+})();
 </script>
 
 </body>
