@@ -55,6 +55,23 @@ active_valves = {}  # bed_id -> {"state": "ON/OFF", "until": datetime}
 API_KEY = "your_super_secret_key"
 API_KEY_NAME = "x-api-key"
 
+
+import threading
+import time
+
+def weather_loop():
+    while True:
+        try:
+            w = current_weather()
+            global_weather["raw"] = w
+            global_weather["last_update"] = datetime.utcnow()
+        except:
+            pass
+
+        time.sleep(60)  # every 1 minute
+
+threading.Thread(target=weather_loop, daemon=True).start()
+
 app = FastAPI(title="Smart Irrigation System")
 
 # Define database URL (SQLite database stored locally)
@@ -339,7 +356,7 @@ def receive_data(data: BedData, db: Session = Depends(get_db)):
     """
     try:
         # Create ORM object from validated request data
-        weather = current_weather()
+        weather = global_weather["raw"]
 
         reading = BedReading(
             bed_id=data.bed_id,
@@ -1906,4 +1923,6 @@ def system_overview(db: Session = Depends(get_db)):
         "watering_beds": watering,
         "healthy_beds": total - dry,
     }
+
+
 
