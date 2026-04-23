@@ -39,10 +39,10 @@ valve_history = defaultdict(list)
 watering_sessions = {}  # active watering (temporary)
 lifetime_stats_store = {}  # permanent stats (never reset)
 rain_memory = {}  # bed_id → last spike time
-bed_state = {} # bed_id → current state (DRY, WET, WATERING, etc.)
+bed_state = {}  # bed_id → current state (DRY, WET, WATERING, etc.)
 
-last_watered = {}   # remembers last time each bed got water
-rain_pause = {}     # remembers "hey it rained, chill for a bit"
+last_watered = {}  # remembers last time each bed got water
+rain_pause = {}  # remembers "hey it rained, chill for a bit"
 
 # ============================================================
 # 🧠 APP SETUP & DATABASE CONFIGURATION
@@ -59,6 +59,7 @@ API_KEY_NAME = "x-api-key"
 import threading
 import time
 
+
 def weather_loop():
     while True:
         try:
@@ -69,6 +70,7 @@ def weather_loop():
             pass
 
         time.sleep(60)  # every 1 minute
+
 
 threading.Thread(target=weather_loop, daemon=True).start()
 
@@ -103,6 +105,7 @@ weather_cache = {
     "last_update": None,  # Timestamp of last successful API call
     "data": None,  # Cached weather response data
 }
+
 
 # ============================================================
 # 🌿 DATABASE MODELS (ORM)
@@ -757,19 +760,19 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
 
     water = soil_dry and not rain_expected
 
-        # if it's raining → pause watering for 30 mins
+    # if it's raining → pause watering for 30 mins
     if weather["is_raining_now"]:
         rain_pause[bed_id] = now + timedelta(minutes=30)
 
     # if still in rain pause → NO water
     if now < rain_pause.get(bed_id, datetime.min):
         return {"water": False}
-    
+
     last = last_watered.get(bed_id)
 
     if last and (now - last).total_seconds() < config.cooldown_sec:
         return {"water": False}
-    
+
     # 💧 THIS is the missing piece
     if water:
         active_valves[bed_id] = {
@@ -1309,6 +1312,7 @@ Dashboard UI (Chart.js)
 </html>
 """
 
+
 @app.get("/health-dashboard", response_class=HTMLResponse)
 def garden_health_page():
     return """
@@ -1615,6 +1619,8 @@ async function streamUpdate() {
 </body>
 </html>
 """
+
+
 @app.get("/api/will-rain")
 def weather_api():
     return get_weather()
@@ -1631,7 +1637,7 @@ def current_weather():
     data = r.json()
 
     weather_main = data["weather"][0]["main"]
-    
+
     # 🌧️ real rain amount (mm in last hour)
     rain = data.get("rain", {}).get("1h", 0)
 
@@ -1731,6 +1737,7 @@ def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
         "rain": [0] * len(timestamps),
         "valve": valve,
     }
+
 
 @app.get("/api/beds/{bed_id}/lifetime")
 def lifetime_stats(bed_id: str, db: Session = Depends(get_db)):
@@ -1906,23 +1913,29 @@ def system_overview(db: Session = Depends(get_db)):
         "healthy_beds": total - dry,
     }
 
+
 from fastapi.responses import HTMLResponse
+
+from fastapi import Depends
+from fastapi.responses import HTMLResponse
+from sqlalchemy.orm import Session
+
 @app.get("/bed/{bed_id}/analytics", response_class=HTMLResponse)
 def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
 
     # -------------------------
-    # GET BED META FROM DB
+    # BED META (DB)
     # -------------------------
     meta = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
 
-    bed_name = meta.name if meta else bed_id
-    bed_icon = meta.icon if meta else "🌱"
+    bed_name = meta.name if meta and meta.name else bed_id
+    bed_icon = meta.icon if meta and meta.icon else "🌱"
 
     return f"""
 <!DOCTYPE html>
 <html>
 <head>
-<title>🌿 {bed_name} Analytics</title>
+<title>{bed_icon} {bed_name} Analytics</title>
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -1938,7 +1951,7 @@ body {{
     background:#1b1f2a;
     border:1px solid #2a2f3a;
     border-radius:16px;
-    margin-bottom:12px;
+    margin-bottom:14px;
 }}
 
 .chart-wrap {{
@@ -1953,10 +1966,7 @@ body {{
 <nav class="navbar navbar-dark bg-black border-bottom border-secondary">
   <div class="container-fluid">
     <a class="navbar-brand" href="/">🌱 Smart Garden</a>
-
-    <span class="text-muted">
-        {bed_icon} {bed_name}
-    </span>
+    <span class="text-muted">{bed_icon} {bed_name}</span>
   </div>
 </nav>
 
@@ -1964,36 +1974,40 @@ body {{
 
 <h2>{bed_icon} {bed_name} Analytics</h2>
 
-<div class="card p-3" id="summary">
-Loading stats...
+<!-- SUMMARY -->
+<div class="card p-3" id="summary">Loading stats...</div>
+
+
+<!-- FORECAST -->
+<div class="card p-3">
+    <h5>🌤 3-Day Forecast</h5>
+    <div id="forecast">Loading forecast...</div>
 </div>
 
+<!-- MOISTURE -->
 <div class="card p-3">
-<h5>💧 Moisture Over Time</h5>
-<div class="chart-wrap">
-<canvas id="moistureChart"></canvas>
-</div>
+    <h5>💧 Moisture Over Time</h5>
+    <div class="chart-wrap">
+        <canvas id="moistureChart"></canvas>
+    </div>
 </div>
 
+
+<!-- WEATHER -->
 <div class="card p-3">
-<h5>🌦 Weather (Rain + Sun)</h5>
-<div class="chart-wrap">
-<canvas id="weatherChart"></canvas>
-</div>
+    <h5>🌦 Weather (Sun + Rain)</h5>
+    <div class="chart-wrap">
+        <canvas id="weatherChart"></canvas>
+    </div>
 </div>
 
-<div class="card p-3">
-<h5>🚰 Watering Activity</h5>
-<div class="chart-wrap">
-<canvas id="waterChart"></canvas>
-</div>
-</div>
 
 </div>
 
 <script>
 
-let moistureChart, weatherChart, waterChart;
+let moistureChart;
+let weatherChart;
 
 async function load() {{
 
@@ -2002,12 +2016,15 @@ async function load() {{
 
     const life = await fetch(`/api/beds/{bed_id}/lifetime`).then(r => r.json());
 
-    const labels = data.timestamps.map(t => new Date(t).toLocaleTimeString());
+    const labels = (data.timestamps || []).map(t => new Date(t).toLocaleTimeString());
 
-    const avgMoisture = data.moisture.length
+    const avgMoisture = data.moisture?.length
         ? (data.moisture.reduce((a,b)=>a+b,0)/data.moisture.length).toFixed(1)
         : "0";
 
+    // -------------------------
+    // SUMMARY
+    // -------------------------
     document.getElementById("summary").innerHTML = `
         <b>{bed_icon} {bed_name}</b><br>
         💧 Avg Moisture: ${{avgMoisture}}<br>
@@ -2015,13 +2032,16 @@ async function load() {{
         ⏱ Total Watering: ${{life.total_watering_minutes || 0}} min
     `;
 
+    // -------------------------
+    // MOISTURE CHART
+    // -------------------------
     moistureChart = new Chart(document.getElementById("moistureChart"), {{
-        type: 'line',
+        type: "line",
         data: {{
             labels,
             datasets: [{{
                 label: "Moisture",
-                data: data.moisture,
+                data: data.moisture || [],
                 borderWidth: 2,
                 pointRadius: 0,
                 tension: 0.35
@@ -2033,18 +2053,21 @@ async function load() {{
         }}
     }});
 
+    // -------------------------
+    // WEATHER CHART (SUN + RAIN)
+    // -------------------------
     weatherChart = new Chart(document.getElementById("weatherChart"), {{
+        type: "bar",
         data: {{
             labels,
             datasets: [
                 {{
-                    type: "bar",
                     label: "Rain",
                     data: data.rain || Array(labels.length).fill(0)
                 }},
                 {{
-                    type: "line",
                     label: "Sun",
+                    type: "line",
                     data: data.sun || Array(labels.length).fill(5),
                     borderDash: [6,4],
                     pointRadius: 0
@@ -2057,32 +2080,22 @@ async function load() {{
         }}
     }});
 
-    waterChart = new Chart(document.getElementById("waterChart"), {{
-        type: "line",
-        data: {{
-            labels,
-            datasets: [{{
-                label: "Valve (1=ON, 0=OFF)",
-                data: (data.valve || []).map(Number),
-                stepped: true,
-                borderWidth: 2,
-                pointRadius: 0
-            }}]
-        }},
-        options: {{
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {{
-                y: {{
-                    min: 0,
-                    max: 1,
-                    ticks: {{
-                        callback: v => v === 1 ? "ON" : "OFF"
-                    }}
-                }}
-            }}
-        }}
-    }});
+    // -------------------------
+    // FORECAST
+    // -------------------------
+    try {{
+        const forecastRes = await fetch("/api/weather/forecast");
+        const forecast = await forecastRes.json();
+
+        document.getElementById("forecast").innerHTML = `
+            <div>🌤 Day 1: ${{forecast.day1}}</div>
+            <div>🌤 Day 2: ${{forecast.day2}}</div>
+            <div>🌤 Day 3: ${{forecast.day3}}</div>
+        `;
+    }} catch (e) {{
+        document.getElementById("forecast").innerHTML =
+            "⚠ Forecast unavailable";
+    }}
 }}
 
 load();
@@ -2092,6 +2105,7 @@ load();
 </body>
 </html>
 """
+
 @app.get("/api/weather")
 def weather_summary():
     weather = current_weather()
@@ -2100,5 +2114,10 @@ def weather_summary():
         "temp": weather["temp"],
         "humidity": weather["humidity"],
         "is_raining_now": weather["is_raining_now"],
-        "will_rain": get_weather()["will_rain"]
+        "will_rain": get_weather()["will_rain"],
     }
+
+
+@app.get("/api/weather/forecast")
+def weather_forecast():
+    return {"day1": "🌧 70% rain", "day2": "☀ clear", "day3": "🌦 light rain"}
