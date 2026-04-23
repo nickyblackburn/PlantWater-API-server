@@ -1290,11 +1290,6 @@ Dashboard UI (Chart.js)
 </html>
 """
 
-
-#########################################################
-## the health page is the "intelligence dashboard" that shows real-time sensor data, watering status, and a live-updating moisture graph for the selected bed. It uses Chart.js for visualization and fetches data from the API endpoints we defined.
-#########################################################
-
 @app.get("/health-dashboard", response_class=HTMLResponse)
 def garden_health_page():
     return """
@@ -1313,9 +1308,6 @@ body {
     font-family: system-ui, sans-serif;
 }
 
-/* =========================
-   CARD UI
-========================= */
 .card {
     background: rgba(27, 31, 42, 0.85);
     border: 1px solid rgba(42, 47, 58, 0.6);
@@ -1324,9 +1316,6 @@ body {
     margin-bottom: 12px;
 }
 
-/* =========================
-   METRICS
-========================= */
 .metric .label {
     font-size: 12px;
     color: #9aa4b2;
@@ -1340,17 +1329,11 @@ body {
 .metric.good .value { color: #00ff9a; }
 .metric.danger .value { color: #ff4d4d; }
 
-/* =========================
-   NAV
-========================= */
 .navbar {
     background:#0b0d10;
     border-bottom:1px solid #2a2f3a;
 }
 
-/* =========================
-   CHART WRAPPER (IMPORTANT FIX)
-========================= */
 .chart-wrap {
     position: relative;
     height: 320px;
@@ -1376,7 +1359,6 @@ body {
 
 <h1 class="mb-3">🌿 Garden Intelligence</h1>
 
-<!-- SYSTEM OVERVIEW -->
 <div class="card p-4">
     <h5>🧠 System Overview</h5>
     <div class="row text-center">
@@ -1403,19 +1385,14 @@ body {
     </div>
 </div>
 
-<!-- ACTIVE BED -->
 <div class="card p-4">
     <h5>🌱 Active Bed</h5>
-
     <select id="bedSelect" class="form-select mb-3"></select>
-
     <div id="liveStatus">Loading...</div>
 </div>
 
-<!-- CHART -->
 <div class="card p-4">
-    <h5>📈 Moisture Stream</h5>
-
+    <h5>📈 Moisture + Weather Stream</h5>
     <div class="chart-wrap">
         <canvas id="chart"></canvas>
     </div>
@@ -1428,23 +1405,18 @@ body {
 </footer>
 
 <script>
-
-/* =========================
-   STATE (STREAM BUFFER)
-========================= */
 const MAX_POINTS = 60;
 
 let moistureBuffer = [];
 let valveBuffer = [];
+let rainBuffer = [];
+let sunBuffer = [];
 let labelBuffer = [];
 
 let chart = null;
 let currentBed = null;
 let bedMeta = {};
 
-/* =========================
-   URL HELPERS
-========================= */
 function getBedFromURL() {
     return new URLSearchParams(window.location.search).get("bed");
 }
@@ -1453,33 +1425,22 @@ function setBedURL(bed) {
     window.history.replaceState(null, "", `?bed=${bed}`);
 }
 
-/* =========================
-   META
-========================= */
 async function loadMeta() {
     const res = await fetch("/api/beds/meta");
     bedMeta = await res.json();
 }
 
-/* =========================
-   OVERVIEW
-========================= */
 async function loadSystemOverview() {
     const res = await fetch("/api/system/overview");
     const data = await res.json();
 
-    document.getElementById("totalBeds").innerText = data.total_beds;
-    document.getElementById("dryBeds").innerText = data.dry_beds;
-    document.getElementById("wateringBeds").innerText = data.watering_beds;
+    totalBeds.innerText = data.total_beds;
+    dryBeds.innerText = data.dry_beds;
+    wateringBeds.innerText = data.watering_beds;
 }
 
-/* =========================
-   BED SELECT
-========================= */
 async function loadBeds() {
-
     const beds = await fetch('/api/beds').then(r => r.json());
-
     const select = document.getElementById("bedSelect");
     select.innerHTML = "";
 
@@ -1488,10 +1449,8 @@ async function loadBeds() {
     for (const bed in beds) {
         const m = bedMeta[bed] || {};
         const opt = document.createElement("option");
-
         opt.value = bed;
         opt.text = `${m.icon || "🌱"} ${m.name || bed}`;
-
         select.appendChild(opt);
     }
 
@@ -1507,21 +1466,17 @@ async function loadBeds() {
     };
 }
 
-/* =========================
-   RESET STREAM ON BED SWITCH
-========================= */
 function resetStream() {
     moistureBuffer = [];
     valveBuffer = [];
+    rainBuffer = [];
+    sunBuffer = [];
     labelBuffer = [];
 
     if (chart) chart.destroy();
     chart = null;
 }
 
-/* =========================
-   STATUS PANEL
-========================= */
 async function loadStatus() {
     if (!currentBed) return;
 
@@ -1537,7 +1492,7 @@ async function loadStatus() {
     if (b.average > 700) status = "🔴 Dry";
     else if (b.average < 300) status = "🔵 Too Wet";
 
-    document.getElementById("liveStatus").innerHTML = `
+    liveStatus.innerHTML = `
         <h5>${meta.icon || "🌱"} ${meta.name || currentBed}</h5>
         <div>💧 ${b.average.toFixed(1)}</div>
         <div>🚰 ${b.valve_state}</div>
@@ -1545,53 +1500,65 @@ async function loadStatus() {
     `;
 }
 
-/* =========================
-   CHART INIT
-========================= */
 function createChart() {
     const ctx = document.getElementById("chart");
 
     chart = new Chart(ctx, {
-        type: 'line',
         data: {
             labels: labelBuffer,
             datasets: [
                 {
-                    label: 'Moisture',
+                    label: '💧 Moisture',
                     data: moistureBuffer,
-                    borderWidth: 2,
-                    tension: 0.45,
+                    type: 'line',
+                    tension: 0.4,
                     pointRadius: 0
                 },
                 {
-                    label: 'Valve',
+                    label: '🚰 Valve',
                     data: valveBuffer,
+                    type: 'line',
                     stepped: true,
-                    borderWidth: 2,
                     pointRadius: 0
+                },
+                {
+                    label: '🌧️ Rain',
+                    data: rainBuffer,
+                    type: 'bar',
+                    yAxisID: 'y1'
+                },
+                {
+                    label: '☀️ Sun',
+                    data: sunBuffer,
+                    type: 'line',
+                    borderDash: [5,5],
+                    pointRadius: 0,
+                    yAxisID: 'y1'
                 }
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-
-            animation: {
-                duration: 500,
-                easing: 'linear'
-            },
+            animation: { duration: 400 },
 
             scales: {
                 x: { display: false },
-                y: { beginAtZero: true }
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: 'Moisture' }
+                },
+                y1: {
+                    beginAtZero: true,
+                    position: 'right',
+                    grid: { drawOnChartArea: false },
+                    title: { display: true, text: 'Weather' }
+                }
             }
         }
     });
 }
 
-/* =========================
-   STREAMING ENGINE
-========================= */
 async function streamUpdate() {
     if (!currentBed) return;
 
@@ -1602,11 +1569,18 @@ async function streamUpdate() {
 
     moistureBuffer.push(data.moisture[i]);
     valveBuffer.push(data.valve[i]);
+
+    // fallback simulated weather if backend not ready
+    rainBuffer.push(data.rain ? data.rain[i] : (Math.random() < 0.1 ? 5 : 0));
+    sunBuffer.push(data.sun ? data.sun[i] : Math.random() * 10);
+
     labelBuffer.push(new Date().toLocaleTimeString());
 
     if (moistureBuffer.length > MAX_POINTS) {
         moistureBuffer.shift();
         valveBuffer.shift();
+        rainBuffer.shift();
+        sunBuffer.shift();
         labelBuffer.shift();
     }
 
@@ -1614,28 +1588,20 @@ async function streamUpdate() {
     else chart.update();
 }
 
-/* =========================
-   INIT LOOP
-========================= */
 (async function init() {
-
     await loadMeta();
     await loadBeds();
     await loadSystemOverview();
 
     setInterval(loadSystemOverview, 5000);
     setInterval(loadStatus, 3000);
-
     setInterval(streamUpdate, 2000);
-
 })();
 </script>
 
 </body>
 </html>
 """
-
-
 @app.get("/api/will-rain")
 def weather_api():
     return get_weather()
@@ -1643,10 +1609,6 @@ def weather_api():
 
 @app.get("/api/weather/current")
 def current_weather():
-    """
-    Returns real-time weather conditions (NOT forecast)
-    """
-
     url = (
         "https://api.openweathermap.org/data/2.5/weather"
         f"?q={CITY}&appid={OPENWEATHER_API_KEY}&units=metric"
@@ -1655,16 +1617,22 @@ def current_weather():
     r = requests.get(url)
     data = r.json()
 
-    weather_main = data["weather"][0]["main"]  # Clear / Rain / Clouds
-    description = data["weather"][0]["description"]
+    weather_main = data["weather"][0]["main"]
+    
+    # 🌧️ real rain amount (mm in last hour)
+    rain = data.get("rain", {}).get("1h", 0)
 
-    is_raining_now = weather_main.lower() == "rain"
+    # ☀️ sun intensity (inverse of clouds)
+    clouds = data.get("clouds", {}).get("all", 0)
+    sun = max(0, 100 - clouds)  # 0–100 scale
 
     return {
         "current": weather_main,
-        "is_raining_now": is_raining_now,
+        "is_raining_now": weather_main.lower() == "rain",
         "temp": data["main"]["temp"],
         "humidity": data["main"]["humidity"],
+        "rain": rain,
+        "sun": sun,
     }
 
 
@@ -1733,15 +1701,15 @@ def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
     timestamps = []
     moisture = []
     valve = []
+    rain = []
+    sun = []
 
     for r in rows:
         timestamps.append(r.timestamp.isoformat() if r.timestamp else "")
         moisture.append(r.average or 0)
 
-        # 🔥 IMPORTANT FIX:
-        # override DB with live valve if it exists
+        # valve logic
         live = active_valves.get(bed_id)
-
         if live:
             valve_state = 1 if live["state"] == "ON" else 0
         else:
@@ -1749,13 +1717,21 @@ def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
 
         valve.append(valve_state)
 
+        # 🌧️ WEATHER EXTRACTION
+        if r.weather:
+            rain.append(r.weather.get("rain", 0))
+            sun.append(r.weather.get("sun", 0))
+        else:
+            rain.append(0)
+            sun.append(0)
+
     return {
         "timestamps": timestamps,
         "moisture": moisture,
-        "rain": [0] * len(timestamps),
         "valve": valve,
+        "rain": rain,
+        "sun": sun,
     }
-
 
 @app.get("/api/beds/{bed_id}/lifetime")
 def lifetime_stats(bed_id: str, db: Session = Depends(get_db)):
