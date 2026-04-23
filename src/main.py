@@ -910,7 +910,6 @@ body {
     color:#9aa4b2;
 }
 
-/* 🌿 clickable cards */
 .clickable-card {
     cursor: pointer;
 }
@@ -920,7 +919,6 @@ body {
     box-shadow: 0 0 15px rgba(0,255,154,0.15);
     border-color: #00ff9a;
 }
-
 </style>
 </head>
 
@@ -957,62 +955,61 @@ body {
 
 <script>
 
-/* =========================
-   STATE
-========================= */
 let bedMeta = {};
 
-/* =========================
-   LOAD META FROM SERVER
-========================= */
+/* -------------------------
+   META
+------------------------- */
 async function loadMeta() {
-    const res = await fetch("/api/beds/meta");
-    bedMeta = await res.json();
+    try {
+        const res = await fetch("/api/beds/meta");
+        bedMeta = await res.json();
+    } catch (e) {
+        bedMeta = {};
+    }
 }
 
-/* =========================
-   SAVE META TO SERVER
-========================= */
-async function saveMeta(bedId, meta) {
-    await fetch(`/api/beds/${bedId}/meta`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(meta)
-    });
-}
-
-/* =========================
-   WEATHER
-========================= */
+/* -------------------------
+   WEATHER (FIXED)
+------------------------- */
 async function loadWeather() {
-    const res = await fetch('/api/weather');
-    const data = await res.json();
+    try {
+        const res = await fetch('/api/weather');
+        const data = await res.json();
 
-    document.getElementById("weather").innerText =
-        data.will_rain ? "🌧 Rain expected soon" : "☀ Stable conditions";
+        document.getElementById("weather").innerText =
+            data.is_raining_now
+                ? "🌧 Currently raining"
+                : data.will_rain
+                    ? "🌧 Rain expected soon"
+                    : "☀ Stable conditions";
+
+    } catch (e) {
+        document.getElementById("weather").innerText =
+            "⚠ Weather unavailable";
+    }
 }
 
-/* =========================
+/* -------------------------
    STATUS
-========================= */
+------------------------- */
 function getStatus(avg) {
     if (avg > 700) return { text:"DRY", cls:"status-bad" };
     if (avg < 300) return { text:"WET", cls:"status-warn" };
     return { text:"HEALTHY", cls:"status-good" };
 }
 
-/* =========================
-   NAVIGATION
-========================= */
+/* -------------------------
+   NAV
+------------------------- */
 function goToBed(bedId) {
-    window.location.href = `/health-dashboard?bed=${bedId}`;
+    window.location.href = `/bed/${bedId}/analytics`;
 }
 
-/* =========================
-   EDIT BED (stop navigation conflict)
-========================= */
+/* -------------------------
+   EDIT BED
+------------------------- */
 async function editBed(bedId) {
-
     const current = bedMeta[bedId] || {};
 
     const name = prompt("Plant / Bed Name:", current.name || bedId);
@@ -1021,78 +1018,83 @@ async function editBed(bedId) {
     const icon = prompt("Emoji / Icon:", current.icon || "🌱");
     if (icon === null) return;
 
-    const meta = { name, icon };
+    await fetch(`/api/beds/${bedId}/meta`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ name, icon })
+    });
 
-    bedMeta[bedId] = meta;
-    await saveMeta(bedId, meta);
-
-    loadBeds();
+    await loadMeta();
+    await loadBeds();
 }
 
-/* =========================
+/* -------------------------
    LOAD BEDS
-========================= */
+------------------------- */
 async function loadBeds() {
+    try {
+        const latest = await fetch('/api/beds/latest').then(r => r.json());
 
-    const latest = await fetch('/api/beds/latest').then(r => r.json());
+        let html = "";
 
-    let html = "";
+        for (const bed in latest) {
 
-    for (const bed in latest) {
+            const b = latest[bed];
 
-        const b = latest[bed];
-        const life = await fetch(`/api/beds/${bed}/lifetime`).then(r => r.json());
+            let life = {};
+            try {
+                life = await fetch(`/api/beds/${bed}/lifetime`).then(r => r.json());
+            } catch (e) {
+                life = { times_watered: 0, total_watering_minutes: 0 };
+            }
 
-        const status = getStatus(b.average);
+            const status = getStatus(b.average);
 
-        const meta = bedMeta[b.bed_id] || {};
-        const name = meta.name || b.bed_id;
-        const icon = meta.icon || "🌱";
+            const meta = bedMeta[b.bed_id] || {};
+            const name = meta.name || b.bed_id;
+            const icon = meta.icon || "🌱";
 
-        html += `
-        <div class="col-md-4 mb-3">
+            html += `
+            <div class="col-md-4 mb-3">
 
-            <div class="card p-3 clickable-card"
-                 onclick="goToBed('${b.bed_id}')">
+                <div class="card p-3 clickable-card"
+                     onclick="goToBed('${b.bed_id}')">
 
-                <h5>${icon} ${name}</h5>
+                    <h5>${icon} ${name}</h5>
 
-                <div class="small">ID: ${b.bed_id}</div>
+                    <div class="small">ID: ${b.bed_id}</div>
 
-                <button class="btn btn-sm btn-outline-light mt-2"
-                        onclick="event.stopPropagation(); editBed('${b.bed_id}')">
-                    ✏ Edit
-                </button>
+                    <button class="btn btn-sm btn-outline-light mt-2"
+                            onclick="event.stopPropagation(); editBed('${b.bed_id}')">
+                        ✏ Edit
+                    </button>
 
-                <p class="${status.cls} mt-2">${status.text}</p>
+                    <p class="${status.cls} mt-2">${status.text}</p>
 
-                <p>💧 Moisture: ${b.average.toFixed(1)}</p>
-                <p>🚰 Valve: ${b.valve_state}</p>
+                    <p>💧 Moisture: ${b.average.toFixed(1)}</p>
+                    <p>🚰 Valve: ${b.valve_state}</p>
 
-                <hr>
+                    <hr>
 
-                <p>🌊 Water Cycles: <b>${life.times_watered || 0}</b></p>
-                <p>⏱ Total Watering: <b>${life.total_watering_minutes || 0} min</b></p>
+                    <p>🌊 Water Cycles: <b>${life.times_watered || 0}</b></p>
+                    <p>⏱ Total Watering: <b>${life.total_watering_minutes || 0} min</b></p>
 
-                <p class="small">
-                    Last watered: ${
-                        life.last_watered
-                            ? new Date(life.last_watered).toLocaleString()
-                            : "Never"
-                    }
-                </p>
-
+                </div>
             </div>
-        </div>
-        `;
-    }
+            `;
+        }
 
-    document.getElementById("beds").innerHTML = html;
+        document.getElementById("beds").innerHTML = html;
+
+    } catch (e) {
+        document.getElementById("beds").innerHTML =
+            "<p>⚠ Failed to load beds</p>";
+    }
 }
 
-/* =========================
+/* -------------------------
    INIT
-========================= */
+------------------------- */
 (async function init() {
     await loadMeta();
     await loadBeds();
@@ -2098,3 +2100,13 @@ load();
 </html>
 """
 
+@app.get("/api/weather")
+def weather_summary():
+    weather = current_weather()
+
+    return {
+        "temp": weather["temp"],
+        "humidity": weather["humidity"],
+        "is_raining_now": weather["is_raining_now"],
+        "will_rain": get_weather()["will_rain"]
+    }
