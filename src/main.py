@@ -1714,36 +1714,22 @@ def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
     timestamps = []
     moisture = []
     valve = []
-    rain = []
-    sun = []
 
     for r in rows:
         timestamps.append(r.timestamp.isoformat() if r.timestamp else "")
         moisture.append(r.average or 0)
 
-        # valve logic
-        live = active_valves.get(bed_id)
-        if live:
-            valve_state = 1 if live["state"] == "ON" else 0
+        # ✅ USE DATABASE HISTORY ONLY
+        if r.valve_state == "ON":
+            valve.append(1)
         else:
-            valve_state = 1 if r.valve_state == "ON" else 0
-
-        valve.append(valve_state)
-
-        # 🌧️ WEATHER EXTRACTION
-        if r.weather:
-            rain.append(r.weather.get("rain", 0))
-            sun.append(r.weather.get("sun", 0))
-        else:
-            rain.append(0)
-            sun.append(0)
+            valve.append(0)
 
     return {
         "timestamps": timestamps,
         "moisture": moisture,
+        "rain": [0] * len(timestamps),
         "valve": valve,
-        "rain": rain,
-        "sun": sun,
     }
 
 @app.get("/api/beds/{bed_id}/lifetime")
@@ -1921,14 +1907,22 @@ def system_overview(db: Session = Depends(get_db)):
     }
 
 from fastapi.responses import HTMLResponse
-
 @app.get("/bed/{bed_id}/analytics", response_class=HTMLResponse)
-def bed_analytics_page(bed_id: str):
+def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
+
+    # -------------------------
+    # GET BED META FROM DB
+    # -------------------------
+    meta = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
+
+    bed_name = meta.name if meta else bed_id
+    bed_icon = meta.icon if meta else "🌱"
+
     return f"""
 <!DOCTYPE html>
 <html>
 <head>
-<title>🌿 Bed Analytics - {bed_id}</title>
+<title>🌿 {bed_name} Analytics</title>
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -1959,20 +1953,21 @@ body {{
 <nav class="navbar navbar-dark bg-black border-bottom border-secondary">
   <div class="container-fluid">
     <a class="navbar-brand" href="/">🌱 Smart Garden</a>
-    <span class="text-muted">Analytics: {bed_id}</span>
+
+    <span class="text-muted">
+        {bed_icon} {bed_name}
+    </span>
   </div>
 </nav>
 
 <div class="container py-4">
 
-<h2>🌿 Bed Analytics</h2>
+<h2>{bed_icon} {bed_name} Analytics</h2>
 
-<!-- SUMMARY -->
 <div class="card p-3" id="summary">
 Loading stats...
 </div>
 
-<!-- MOISTURE -->
 <div class="card p-3">
 <h5>💧 Moisture Over Time</h5>
 <div class="chart-wrap">
@@ -1980,15 +1975,13 @@ Loading stats...
 </div>
 </div>
 
-<!-- WEATHER -->
 <div class="card p-3">
-<h5>🌦 Weather (Sun + Rain)</h5>
+<h5>🌦 Weather (Rain + Sun)</h5>
 <div class="chart-wrap">
 <canvas id="weatherChart"></canvas>
 </div>
 </div>
 
-<!-- WATERING -->
 <div class="card p-3">
 <h5>🚰 Watering Activity</h5>
 <div class="chart-wrap">
@@ -2002,9 +1995,6 @@ Loading stats...
 
 let moistureChart, weatherChart, waterChart;
 
-/* ---------------------------
-   LOAD DATA
---------------------------- */
 async function load() {{
 
     const res = await fetch(`/api/beds/{bed_id}/full-graph`);
@@ -2012,21 +2002,19 @@ async function load() {{
 
     const life = await fetch(`/api/beds/{bed_id}/lifetime`).then(r => r.json());
 
-    // -------------------------
-    // SUMMARY CARD
-    // -------------------------
+    const labels = data.timestamps.map(t => new Date(t).toLocaleTimeString());
+
+    const avgMoisture = data.moisture.length
+        ? (data.moisture.reduce((a,b)=>a+b,0)/data.moisture.length).toFixed(1)
+        : "0";
+
     document.getElementById("summary").innerHTML = `
-        <b>🌱 Bed:</b> {bed_id}<br>
-        💧 Avg Moisture: ${{(data.moisture.reduce((a,b)=>a+b,0)/data.moisture.length).toFixed(1)}}<br>
+        <b>{bed_icon} {bed_name}</b><br>
+        💧 Avg Moisture: ${{avgMoisture}}<br>
         🚰 Times Watered: ${{life.times_watered || 0}}<br>
         ⏱ Total Watering: ${{life.total_watering_minutes || 0}} min
     `;
 
-    const labels = data.timestamps.map(t => new Date(t).toLocaleTimeString());
-
-    // -------------------------
-    // MOISTURE CHART
-    // -------------------------
     moistureChart = new Chart(document.getElementById("moistureChart"), {{
         type: 'line',
         data: {{
@@ -2036,7 +2024,7 @@ async function load() {{
                 data: data.moisture,
                 borderWidth: 2,
                 pointRadius: 0,
-                tension: 0.4
+                tension: 0.35
             }}]
         }},
         options: {{
@@ -2045,9 +2033,6 @@ async function load() {{
         }}
     }});
 
-    // -------------------------
-    // WEATHER CHART (SIMPLIFIED)
-    // -------------------------
     weatherChart = new Chart(document.getElementById("weatherChart"), {{
         data: {{
             labels,
@@ -2061,7 +2046,7 @@ async function load() {{
                     type: "line",
                     label: "Sun",
                     data: data.sun || Array(labels.length).fill(5),
-                    borderDash: [5,5],
+                    borderDash: [6,4],
                     pointRadius: 0
                 }}
             ]
@@ -2072,22 +2057,30 @@ async function load() {{
         }}
     }});
 
-    // -------------------------
-    // WATERING CHART
-    // -------------------------
     waterChart = new Chart(document.getElementById("waterChart"), {{
-        type: "stepLine",
+        type: "line",
         data: {{
             labels,
             datasets: [{{
-                label: "Valve",
-                data: data.valve,
-                stepped: true
+                label: "Valve (1=ON, 0=OFF)",
+                data: (data.valve || []).map(Number),
+                stepped: true,
+                borderWidth: 2,
+                pointRadius: 0
             }}]
         }},
         options: {{
             responsive: true,
-            maintainAspectRatio: false
+            maintainAspectRatio: false,
+            scales: {{
+                y: {{
+                    min: 0,
+                    max: 1,
+                    ticks: {{
+                        callback: v => v === 1 ? "ON" : "OFF"
+                    }}
+                }}
+            }}
         }}
     }});
 }}
@@ -2099,7 +2092,6 @@ load();
 </body>
 </html>
 """
-
 @app.get("/api/weather")
 def weather_summary():
     weather = current_weather()
