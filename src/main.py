@@ -1918,5 +1918,183 @@ def system_overview(db: Session = Depends(get_db)):
         "healthy_beds": total - dry,
     }
 
+from fastapi.responses import HTMLResponse
 
+@app.get("/bed/{bed_id}/analytics", response_class=HTMLResponse)
+def bed_analytics_page(bed_id: str):
+    return f"""
+<!DOCTYPE html>
+<html>
+<head>
+<title>🌿 Bed Analytics - {bed_id}</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body {{
+    background:#0f1115;
+    color:white;
+    font-family: system-ui, sans-serif;
+}}
+
+.card {{
+    background:#1b1f2a;
+    border:1px solid #2a2f3a;
+    border-radius:16px;
+    margin-bottom:12px;
+}}
+
+.chart-wrap {{
+    position: relative;
+    height: 320px;
+}}
+</style>
+</head>
+
+<body>
+
+<nav class="navbar navbar-dark bg-black border-bottom border-secondary">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="/">🌱 Smart Garden</a>
+    <span class="text-muted">Analytics: {bed_id}</span>
+  </div>
+</nav>
+
+<div class="container py-4">
+
+<h2>🌿 Bed Analytics</h2>
+
+<!-- SUMMARY -->
+<div class="card p-3" id="summary">
+Loading stats...
+</div>
+
+<!-- MOISTURE -->
+<div class="card p-3">
+<h5>💧 Moisture Over Time</h5>
+<div class="chart-wrap">
+<canvas id="moistureChart"></canvas>
+</div>
+</div>
+
+<!-- WEATHER -->
+<div class="card p-3">
+<h5>🌦 Weather (Sun + Rain)</h5>
+<div class="chart-wrap">
+<canvas id="weatherChart"></canvas>
+</div>
+</div>
+
+<!-- WATERING -->
+<div class="card p-3">
+<h5>🚰 Watering Activity</h5>
+<div class="chart-wrap">
+<canvas id="waterChart"></canvas>
+</div>
+</div>
+
+</div>
+
+<script>
+
+let moistureChart, weatherChart, waterChart;
+
+/* ---------------------------
+   LOAD DATA
+--------------------------- */
+async function load() {{
+
+    const res = await fetch(`/api/beds/{bed_id}/full-graph`);
+    const data = await res.json();
+
+    const life = await fetch(`/api/beds/{bed_id}/lifetime`).then(r => r.json());
+
+    // -------------------------
+    // SUMMARY CARD
+    // -------------------------
+    document.getElementById("summary").innerHTML = `
+        <b>🌱 Bed:</b> {bed_id}<br>
+        💧 Avg Moisture: ${{(data.moisture.reduce((a,b)=>a+b,0)/data.moisture.length).toFixed(1)}}<br>
+        🚰 Times Watered: ${{life.times_watered || 0}}<br>
+        ⏱ Total Watering: ${{life.total_watering_minutes || 0}} min
+    `;
+
+    const labels = data.timestamps.map(t => new Date(t).toLocaleTimeString());
+
+    // -------------------------
+    // MOISTURE CHART
+    // -------------------------
+    moistureChart = new Chart(document.getElementById("moistureChart"), {{
+        type: 'line',
+        data: {{
+            labels,
+            datasets: [{{
+                label: "Moisture",
+                data: data.moisture,
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0.4
+            }}]
+        }},
+        options: {{
+            responsive: true,
+            maintainAspectRatio: false
+        }}
+    }});
+
+    // -------------------------
+    // WEATHER CHART (SIMPLIFIED)
+    // -------------------------
+    weatherChart = new Chart(document.getElementById("weatherChart"), {{
+        data: {{
+            labels,
+            datasets: [
+                {{
+                    type: "bar",
+                    label: "Rain",
+                    data: data.rain || Array(labels.length).fill(0)
+                }},
+                {{
+                    type: "line",
+                    label: "Sun",
+                    data: data.sun || Array(labels.length).fill(5),
+                    borderDash: [5,5],
+                    pointRadius: 0
+                }}
+            ]
+        }},
+        options: {{
+            responsive: true,
+            maintainAspectRatio: false
+        }}
+    }});
+
+    // -------------------------
+    // WATERING CHART
+    // -------------------------
+    waterChart = new Chart(document.getElementById("waterChart"), {{
+        type: "stepLine",
+        data: {{
+            labels,
+            datasets: [{{
+                label: "Valve",
+                data: data.valve,
+                stepped: true
+            }}]
+        }},
+        options: {{
+            responsive: true,
+            maintainAspectRatio: false
+        }}
+    }});
+}}
+
+load();
+
+</script>
+
+</body>
+</html>
+"""
 
