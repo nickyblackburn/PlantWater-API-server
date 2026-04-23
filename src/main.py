@@ -1531,13 +1531,7 @@ function createChart() {
                     tension: 0.4,
                     pointRadius: 0
                 },
-                {
-                    label: '🚰 Valve',
-                    data: valveBuffer,
-                    type: 'line',
-                    stepped: true,
-                    pointRadius: 0
-                },
+               
                 {
                     label: '🌧️ Rain',
                     data: rainBuffer,
