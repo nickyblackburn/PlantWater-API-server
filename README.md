@@ -161,5 +161,6 @@ If you want to change the weather location or API key, update `CITY` and `OPENWE
 3. add a watering counter life time >w< -x 
 4. Add discord status to discord bot ngl -x 
 5. get valve status to work on graph -x 
-6. add APi keys to the pain endpoints that require it like the bed data and etc
-7. fix ux of the historical data page 
+6. add APi keys to the pain endpoints that require it like the bed data and etc -x 
+7. fix ux of the historical data page -x x
+8. Ad ai like plant s status stuff 
