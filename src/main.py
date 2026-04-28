@@ -1556,9 +1556,19 @@ def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
 
 <body>
 
-<nav class="navbar navbar-expand-lg navbar-dark">
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-secondary">
   <div class="container-fluid">
+
     <a class="navbar-brand" href="/">🌱 Smart Garden</a>
+
+    <div class="navbar-nav">
+      <a class="nav-link" href="/">Dashboard</a>
+      <a class="nav-link" href="/nodes">🌿 Devices</a>
+      <a class="nav-link" href="/docs">API Docs</a>
+      <a class="nav-link" href="/about">About</a>
+    </div>
+
   </div>
 </nav>
 
