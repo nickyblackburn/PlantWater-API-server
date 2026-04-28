@@ -2,10 +2,11 @@ import discord
 from discord.ext import commands
 import requests
 import os
+import datetime
 from dotenv import load_dotenv
 
 # =========================
-# 🔐 LOAD ENV VARS
+# 🔐 ENV
 # =========================
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -22,14 +23,27 @@ bot = commands.Bot(command_prefix=".", intents=intents)
 bot.remove_command("help")
 
 
+# =========================
+# 🌐 HELPERS
+# =========================
+def get_bed_status():
+    try:
+        res = requests.get(f"{API_BASE}/api/beds/latest", timeout=5)
+        return res.json()
+    except:
+        return None
+
+
 def get_bed_meta():
     try:
         res = requests.get(f"{API_BASE}/api/beds/meta", timeout=5)
         return res.json()
     except:
         return {}
+
+
 # =========================
-# 🌱 HELP COMMAND (FIXED + CLEAN)
+# 🌱 HELP COMMAND (UNCHANGED STYLE)
 # =========================
 @bot.command()
 async def help(ctx):
@@ -67,18 +81,7 @@ async def help(ctx):
 
 
 # =========================
-# 🌱 API FUNCTION
-# =========================
-def get_bed_status():
-    try:
-        res = requests.get(f"{API_BASE}/api/beds/latest", timeout=5)
-        return res.json()
-    except:
-        return None
-
-
-# =========================
-# 🚀 READY EVENT
+# 🚀 READY
 # =========================
 @bot.event
 async def on_ready():
@@ -86,7 +89,7 @@ async def on_ready():
 
 
 # =========================
-# 💬 STATUS COMMAND (IMPROVED)
+# 💬 STATUS COMMAND (YOUR ORIGINAL STYLE + SIGNAL ADDED)
 # =========================
 @bot.command()
 async def status(ctx):
@@ -105,17 +108,27 @@ async def status(ctx):
 
     active = []
 
+    now = datetime.datetime.utcnow()
+
     for bed_id, bed in data.items():
 
         avg = bed.get("average", 0)
+        sensors = bed.get("sensors", [])
         valve = bed.get("valve_state", "UNKNOWN")
+        rssi = bed.get("rssi")  # 🌟 added signal
 
-        # 🌿 GET USER META (name + icon)
+        timestamp = bed.get("timestamp")
+
+        # =========================
+        # 🌿 META
+        # =========================
         bed_meta = meta.get(bed_id, {})
         name = bed_meta.get("name", bed_id)
         icon = bed_meta.get("icon", "🌱")
 
-        # soil state
+        # =========================
+        # 🌡️ STATE
+        # =========================
         if avg > 650:
             state = "🏜️ Dry"
         elif avg > 450:
@@ -123,12 +136,30 @@ async def status(ctx):
         else:
             state = "💧 Wet"
 
+        # =========================
+        # 📶 SIGNAL (ADDED BUT SIMPLE)
+        # =========================
+        if rssi is None:
+            signal = "❓ unknown"
+        elif rssi > -60:
+            signal = "🟢 strong"
+        elif rssi > -75:
+            signal = "🟡 medium"
+        else:
+            signal = "🔴 weak"
+
+        # =========================
+        # 🌊 SENSOR STRING (UNCHANGED STYLE)
+        # =========================
+        sensor_str = ", ".join(str(s) for s in sensors) if sensors else "no data"
+
         embed.add_field(
             name=f"{icon} {name} (`{bed_id}`)",
             value=(
                 f"**Moisture:** `{avg:.1f}`\n"
                 f"**State:** {state}\n"
-                f"**Valve:** {'🚰 ON' if valve == 'ON' else '🔒 OFF'}"
+                f"**Valve:** {'🚰 ON' if valve == 'ON' else '🔒 OFF'}\n"
+                f"**Signal:** {signal}"
             ),
             inline=True
         )
@@ -142,8 +173,10 @@ async def status(ctx):
         embed.set_footer(text="🟢 System idle — no watering active")
 
     await ctx.send(embed=embed)
+
+
 # =========================
-# ▶️ START BOT
+# ▶️ RUN
 # =========================
 if not TOKEN:
     print("❌ Missing DISCORD_TOKEN in .env file")
