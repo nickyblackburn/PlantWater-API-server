@@ -119,7 +119,8 @@ class BedMetaDB(Base):
 
     name = Column(String, default="")
     icon = Column(String, default="🌱")
-    ip = Column(String)   
+    ip = Column(String)
+
 
 # BedReading: Records sensor data from a plant bed at specific timestamps
 # Each reading captures all sensors' measurements and system state
@@ -1314,11 +1315,13 @@ Dashboard UI (Chart.js)
 </html>
 """
 
+
 ###################################################
 ## 🌿 DEVICES PAGE - REAL-TIME NODE STATUSES
 ####################################################
 
 from fastapi.responses import HTMLResponse
+
 
 @app.get("/nodes", response_class=HTMLResponse)
 def node_status_page():
@@ -1479,9 +1482,11 @@ async function loadNodes() {
 </html>
 """
 
+
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from fastapi import Depends
+
 
 @app.get("/bed/{bed_id}/analytics", response_class=HTMLResponse)
 def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
@@ -1714,6 +1719,8 @@ from datetime import datetime, timedelta
 # and maybe node_last_seen from heartbeat
 
 node_last_seen = {}  # from heartbeat endpoint
+
+
 @app.get("/device/{bed_id}", response_class=HTMLResponse)
 def device_page(bed_id: str, db: Session = Depends(get_db)):
 
@@ -1896,16 +1903,6 @@ setInterval(load, 3000);
     return HTMLResponse(html)
 
 
-
-
-
-
-
-
-
-
-
-
 @app.get("/api/will-rain")
 def weather_api():
     return get_weather()
@@ -1988,6 +1985,7 @@ def get_mode(bed_id: str):
         "mode": active_valves.get(bed_id, {}).get("mode", "normal"),
     }
 
+
 @app.get("/api/beds/{bed_id}/full-graph")
 def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
 
@@ -2011,9 +2009,7 @@ def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
         # --------------------
         # TIMESTAMP
         # --------------------
-        timestamps.append(
-            r.timestamp.isoformat() if r.timestamp else ""
-        )
+        timestamps.append(r.timestamp.isoformat() if r.timestamp else "")
 
         # --------------------
         # MOISTURE
@@ -2042,7 +2038,6 @@ def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
         "valve": valve,
         "rssi": rssi,
     }
-
 
 
 @app.get("/api/beds/{bed_id}/lifetime")
@@ -2219,6 +2214,7 @@ def system_overview(db: Session = Depends(get_db)):
         "healthy_beds": total - dry,
     }
 
+
 @app.get("/api/weather")
 def weather_summary():
     last_saved = 0
@@ -2226,7 +2222,6 @@ def weather_summary():
     if time.time() - last_saved >= 300:
         weather = current_weather()
         last_saved = time.time()
-    
 
     return {
         "temp": weather["temp"],
@@ -2238,6 +2233,7 @@ def weather_summary():
 
 from pydantic import BaseModel
 
+
 class Heartbeat(BaseModel):
     bed_id: str
 
@@ -2247,11 +2243,10 @@ from datetime import datetime
 
 node_last_seen = {}
 
+
 @app.post("/api/node/heartbeat")
 def node_heartbeat(
-    bed_id: str = Query(...),
-    ip: str = Query(None),
-    rssi: int = Query(None)
+    bed_id: str = Query(...), ip: str = Query(None), rssi: int = Query(None)
 ):
     now = datetime.utcnow().isoformat()
 
@@ -2259,11 +2254,7 @@ def node_heartbeat(
         "bed_id": bed_id,
         "ip": ip,
         "rssi": rssi,
-        "last_seen": now
+        "last_seen": now,
     }
 
-    return {
-        "ok": True,
-        "bed_id": bed_id,
-        "last_seen": now
-    }
+    return {"ok": True, "bed_id": bed_id, "last_seen": now}
