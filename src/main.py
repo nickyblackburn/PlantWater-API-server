@@ -1482,7 +1482,6 @@ async function loadNodes() {
 </html>
 """
 
-
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from fastapi import Depends
@@ -1537,6 +1536,21 @@ def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
             border-radius: 12px;
             text-align: center;
         }
+
+        .weather-main {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .temp {
+            font-size: 42px;
+            font-weight: bold;
+        }
+
+        .muted {
+            opacity: 0.7;
+        }
     </style>
 </head>
 
@@ -1545,12 +1559,6 @@ def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
 <nav class="navbar navbar-expand-lg navbar-dark">
   <div class="container-fluid">
     <a class="navbar-brand" href="/">🌱 Smart Garden</a>
-    <div class="navbar-nav">
-      <a class="nav-link" href="/">Dashboard</a>
-      <a class="nav-link" href="/nodes">🌿 Devices</a>
-      <a class="nav-link" href="/docs">API Docs</a>
-      <a class="nav-link" href="/about">About</a>
-    </div>
   </div>
 </nav>
 
@@ -1559,7 +1567,13 @@ def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
 <h2>{title}</h2>
 
 <div class="card p-3" id="summary">Loading...</div>
+<!-- WEATHER CARD -->
+<div class="card p-3">
+    <h5>🌤 Weather</h5>
+    <div id="weatherBox">Loading weather...</div>
+</div>
 
+<!-- MOISTURE (UNCHANGED) -->
 <div class="card p-3">
     <h5>💧 Moisture</h5>
     <div class="chart-wrap">
@@ -1574,7 +1588,6 @@ def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
 <script>
 
 let moistureChart;
-let weatherChart;
 
 async function loadAnalytics() {
 
@@ -1582,43 +1595,21 @@ async function loadAnalytics() {
     const data = await res.json();
 
     const life = await fetch("/api/beds/{bed_id}/lifetime").then(r => r.json());
+    const weather = await fetch("/api/weather").then(r => r.json());
 
     const timestamps = data.timestamps || [];
     const moisture = data.moisture || [];
-    const rain = data.rain || [];
+    const forecast = weather.forecast_4day || [];
 
-    // -------------------------
-    // VALVE NORMALIZATION
-    // -------------------------
-    const valveRaw = data.valve || [];
-    const valve = valveRaw.map(v => {
-        if (typeof v === "string") {
-            return v.toLowerCase().trim() === "on" ? 1 : 0;
-        }
-        return v ? 1 : 0;
-    });
-
-    // -------------------------
-    // ALIGN EVERYTHING
-    // -------------------------
-    const minLen = Math.min(
-        timestamps.length,
-        moisture.length,
-        rain.length,
-        valve.length
-    );
+    const minLen = Math.min(timestamps.length, moisture.length);
 
     const labels = timestamps.slice(0, minLen).map(t =>
         new Date(t).toLocaleTimeString()
     );
 
     const safeMoisture = moisture.slice(0, minLen);
-    const safeRain = rain.slice(0, minLen);
-    const safeValve = valve.slice(0, minLen);
 
-    // -------------------------
     // SUMMARY
-    // -------------------------
     const avgMoisture = safeMoisture.length
         ? (safeMoisture.reduce((a,b)=>a+b,0)/safeMoisture.length).toFixed(1)
         : "0";
@@ -1626,13 +1617,11 @@ async function loadAnalytics() {
     document.getElementById("summary").innerHTML =
         "<div class='stat-grid'>" +
         "<div class='stat'>💧 <b>" + avgMoisture + "</b> Avg</div>" +
-        "<div class='stat'>🚰 <b>" + (life.times_watered || 0) + "</b> Times watered</div>" +
+        "<div class='stat'>🚰 <b>" + (life.times_watered || 0) + "</b> Watered</div>" +
         "<div class='stat'>⏱ <b>" + (life.total_watering_minutes || 0) + "m</b></div>" +
         "</div>";
 
-    // -------------------------
     // MOISTURE CHART
-    // -------------------------
     moistureChart = new Chart(
         document.getElementById("moistureChart"),
         {
@@ -1655,41 +1644,41 @@ async function loadAnalytics() {
         }
     );
 
-    // -------------------------
-    // WEATHER + VALVE
-    // -------------------------
-    weatherChart = new Chart(
-        document.getElementById("weatherChart"),
-        {
-            type: "line",
-            data: {
-                labels: labels,
-                datasets: [
-                   
-                    {
-                        label: "Valve",
-                        data: safeValve,
-                        stepped: true,
-                        borderWidth: 2,
-                        pointRadius: 0
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        min: 0,
-                        max: 1,
-                        ticks: {
-                            callback: v => v === 1 ? "ON" : v === 0 ? "OFF" : ""
-                        }
-                    }
-                }
-            }
-        }
-    );
+    // WEATHER CARD
+    document.getElementById("weatherBox").innerHTML = `
+        <div class="weather-main">
+            <div>
+                <div class="temp">${weather.temp ?? "--"}°</div>
+                <div class="muted">${weather.condition ?? "Unknown"}</div>
+            </div>
+            <div style="text-align:right;">
+                <div>🌧 ${weather.will_rain ? "Rain likely" : "No rain"}</div>
+                <div class="muted">${weather.is_raining_now ? "Raining now" : "Clear"}</div>
+            </div>
+        </div>
+    `;
+
+    // 4 DAY FORECAST
+    document.getElementById("forecast4day").innerHTML =
+        forecast.map(day => {
+
+            const date = new Date(day.date).toLocaleDateString(undefined, {
+                weekday: "short",
+                month: "short",
+                day: "numeric"
+            });
+
+            const icon = day.rain_chance > 0.5 ? "🌧" : "☀️";
+
+            return `
+                <div class="stat">
+                    <div>${icon}</div>
+                    <div><b>${date}</b></div>
+                    <div>${Math.round(day.rain_chance * 100)}%</div>
+                    <div>${day.temp_high ?? "?"}° / ${day.temp_low ?? "?"}°</div>
+                </div>
+            `;
+        }).join("");
 
 }
 
@@ -1699,9 +1688,13 @@ loadAnalytics();
 
 </body>
 </html>
-""".replace("{bed_id}", bed_id).replace("{title}", title)
+"""
 
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=html.replace("{bed_id}", bed_id).replace("{title}", title))
+
+
+
+
 @app.get("/device/{bed_id}", response_class=HTMLResponse)
 def device_page(bed_id: str, db: Session = Depends(get_db)):
 
