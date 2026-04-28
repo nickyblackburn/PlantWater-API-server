@@ -1567,12 +1567,7 @@ def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
     </div>
 </div>
 
-<div class="card p-3">
-    <h5>🌦 Rain + Valve</h5>
-    <div class="chart-wrap">
-        <canvas id="weatherChart"></canvas>
-    </div>
-</div>
+
 
 </div>
 
@@ -1707,20 +1702,6 @@ loadAnalytics();
 """.replace("{bed_id}", bed_id).replace("{title}", title)
 
     return HTMLResponse(content=html)
-
-
-from fastapi.responses import HTMLResponse
-from fastapi import Depends
-from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
-
-# assumes you already have:
-# BedMetaDB, BedReading, get_db
-# and maybe node_last_seen from heartbeat
-
-node_last_seen = {}  # from heartbeat endpoint
-
-
 @app.get("/device/{bed_id}", response_class=HTMLResponse)
 def device_page(bed_id: str, db: Session = Depends(get_db)):
 
@@ -1805,6 +1786,11 @@ body {{
         <h5 id="battery">-</h5>
     </div>
 
+    <div class="card">
+        <div class="small">Valve</div>
+        <h5 id="valve">-</h5>
+    </div>
+
 </div>
 
 <div class="card">
@@ -1814,11 +1800,19 @@ body {{
     </div>
 </div>
 
+<div class="card">
+    <h5>🚰 Valve History</h5>
+    <div class="chart-wrap">
+        <canvas id="valveChart"></canvas>
+    </div>
+</div>
+
 </div>
 
 <script>
 
 let rssiChart = null;
+let valveChart = null;
 
 async function load() {{
 
@@ -1833,6 +1827,8 @@ async function load() {{
     document.getElementById("battery").innerText =
         b.battery ? b.battery.toFixed(2) + "V" : "N/A";
 
+    document.getElementById("valve").innerText = b.valve_state ?? "OFF";
+
     const now = Date.now();
     const lastSeen = b.last_seen ? new Date(b.last_seen).getTime() : now;
     const online = (now - lastSeen) < 15000;
@@ -1843,33 +1839,32 @@ async function load() {{
         : "<span class='bad'>🔴 OFFLINE</span>";
 
     // -------------------------
-    // HISTORY SAFE FETCH
+    // HISTORY
     // -------------------------
-    const histRes = await fetch("/api/beds/{bed_id}/full-graph");
-    const hist = await histRes.json();
+    const hist = await fetch("/api/beds/{bed_id}/full-graph").then(r => r.json());
 
     const timestamps = (hist.timestamps || []).map(t =>
         new Date(t).toLocaleTimeString()
     );
 
-    const rssi = hist.rssi || [];
+    const rssi = (hist.rssi || []).map(v => Number(v));
+    const valve = (hist.valve || []).map(v => Number(v));
 
-    const minLen = Math.min(timestamps.length, rssi.length);
+    const minLen = Math.min(timestamps.length, rssi.length, valve.length);
 
     const labels = timestamps.slice(0, minLen);
     const rssiData = rssi.slice(0, minLen);
+    const valveData = valve.slice(0, minLen);
 
     // -------------------------
-    // FIX: ALWAYS REBUILD CHART
+    // RSSI CHART
     // -------------------------
-    if (rssiChart) {{
-        rssiChart.destroy();
-    }}
+    if (rssiChart) rssiChart.destroy();
 
     rssiChart = new Chart(document.getElementById("rssiChart"), {{
         type: "line",
         data: {{
-            labels: labels,
+            labels,
             datasets: [{{
                 label: "RSSI (dBm)",
                 data: rssiData,
@@ -1889,6 +1884,41 @@ async function load() {{
             }}
         }}
     }});
+
+    // -------------------------
+    // VALVE CHART (FIXED + STEP SIGNAL)
+    // -------------------------
+    if (valveChart) valveChart.destroy();
+
+    valveChart = new Chart(document.getElementById("valveChart"), {{
+        type: "line",
+        data: {{
+            labels,
+            datasets: [{{
+                label: "Valve (1 = ON, 0 = OFF)",
+                data: valveData,
+                borderWidth: 2,
+                pointRadius: 0,
+                stepped: true,
+                tension: 0,
+                borderColor: "#00ff9a"
+            }}]
+        }},
+        options: {{
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {{
+                y: {{
+                    min: 0,
+                    max: 1,
+                    ticks: {{
+                        stepSize: 1
+                    }}
+                }}
+            }}
+        }}
+    }});
+
 }}
 
 load();
@@ -1901,7 +1931,6 @@ setInterval(load, 3000);
 """
 
     return HTMLResponse(html)
-
 
 @app.get("/api/will-rain")
 def weather_api():
