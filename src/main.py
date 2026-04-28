@@ -934,7 +934,7 @@ body {
 
     <div class="navbar-nav">
       <a class="nav-link" href="/">Dashboard</a>
-      <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
+      <a class="nav-link" href="/nodes">🌿 Devices</a>
       <a class="nav-link" href="/docs">API Docs</a>
       <a class="nav-link" href="/about">About</a>
     </div>
@@ -1216,7 +1216,7 @@ def about_page():
 
     <div class="navbar-nav">
       <a class="nav-link" href="/">Dashboard</a>
-      <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
+      <a class="nav-link" href="/nodes">🌿 Devices</a>
       <a class="nav-link" href="/docs">API Docs</a>
       <a class="nav-link" href="/about">About</a>
     </div>
@@ -1315,16 +1315,15 @@ Dashboard UI (Chart.js)
 
 from fastapi.responses import HTMLResponse
 
-@app.get("/health-dashboard", response_class=HTMLResponse)
-def garden_health_page():
+@app.get("/nodes", response_class=HTMLResponse)
+def node_status_page():
     return HTMLResponse(content="""
 <!DOCTYPE html>
 <html>
 <head>
-<title>🌿 Garden Intelligence</title>
+<title>🛰 Garden Nodes</title>
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
 body {
@@ -1334,266 +1333,106 @@ body {
 }
 
 .card {
-    background: rgba(27,31,42,0.85);
-    border: 1px solid rgba(42,47,58,0.6);
-    border-radius: 18px;
-    margin-bottom: 12px;
+    background:#1b1f2a;
+    border:1px solid #2a2f3a;
+    border-radius:16px;
+    padding:16px;
 }
 
-.chart-wrap {
-    height: 300px;
+.good { color:#00ff9a; }
+.warn { color:#ffcc00; }
+.bad  { color:#ff4d4d; }
+
+.grid {
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+    gap:12px;
+}
+
+.small {
+    font-size:12px;
+    color:#9aa4b2;
 }
 </style>
 </head>
 
 <body>
 
+<nav class="navbar navbar-expand-lg navbar-dark">
+  <div class="container-fluid">
+
+    <a class="navbar-brand" href="/">🌱 Smart Garden</a>
+
+    <div class="navbar-nav">
+      <a class="nav-link" href="/">Dashboard</a>
+      <a class="nav-link" href="/nodes">🌿 Devices</a>
+      <a class="nav-link" href="/docs">API Docs</a>
+      <a class="nav-link" href="/about">About</a>
+    </div>
+
+  </div>
+</nav>
+
 <div class="container py-4">
 
-<h1>🌿 Garden Intelligence (LIVE)</h1>
+<h2>🛰 Garden Node Status</h2>
 
-<!-- SYSTEM -->
-<div class="card p-3">
-    <div>Total Beds: <b id="totalBeds">-</b></div>
-    <div>Dry Beds: <b id="dryBeds">-</b></div>
-    <div>Watering: <b id="wateringBeds">-</b></div>
-</div>
-
-<!-- SELECT -->
-<div class="card p-3">
-    <select id="bedSelect" class="form-select"></select>
-</div>
-
-<!-- STATUS -->
-<div class="card p-3" id="status"></div>
-
-<!-- WEATHER -->
-<div class="card p-3">
-    <h5>🌦 Live Weather</h5>
-    <div id="weatherBox">Loading...</div>
-</div>
-
-<!-- GRAPH -->
-<div class="card p-3">
-    <h5>📈 Live Stream</h5>
-    <div class="chart-wrap">
-        <canvas id="chart"></canvas>
-    </div>
-</div>
+<div id="nodes" class="grid"></div>
 
 </div>
 
 <script>
 
-let currentBed = null;
-let chart = null;
-
-let buffer = {
-    labels: [],
-    moisture: [],
-    rain: [],
-    sun: [],
-    valve: []
-};
-
-const MAX = 50;
-
-// ------------------
-// LOAD BEDS
-// ------------------
-async function loadBeds() {
-    const beds = await fetch('/api/beds').then(r=>r.json());
-    const select = document.getElementById("bedSelect");
-
-    select.innerHTML = "";
-
-    for (const b in beds) {
-        const opt = document.createElement("option");
-        opt.value = b;
-        opt.text = b;
-        select.appendChild(opt);
-    }
-
-    currentBed = Object.keys(beds)[0];
-    select.value = currentBed;
-
-    select.onchange = () => {
-        currentBed = select.value;
-        reset();
-    };
-}
-
-// ------------------
-// RESET
-// ------------------
-function reset() {
-    buffer = { labels: [], moisture: [], rain: [], sun: [], valve: [] };
-    if (chart) chart.destroy();
-    chart = null;
-}
-
-// ------------------
-// SYSTEM
-// ------------------
-async function loadSystem() {
-    const res = await fetch('/api/system/overview');
-    const d = await res.json();
-
-    totalBeds.innerText = d.total_beds;
-    dryBeds.innerText = d.dry_beds;
-    wateringBeds.innerText = d.watering_beds;
-}
-
-// ------------------
-// STATUS
-// ------------------
-async function loadStatus() {
-    const res = await fetch('/api/beds/latest');
+async function loadNodes() {
+    const res = await fetch("/api/beds/latest");
     const data = await res.json();
 
-    const b = data[currentBed];
-    if (!b) return;
+    let html = "";
 
-    status.innerHTML = `
-        💧 ${b.average.toFixed(1)} |
-        🚰 ${b.valve_state}
-    `;
-}
+    for (const id in data) {
+        const n = data[id];
 
-// ------------------
-// WEATHER
-// ------------------
-async function loadWeather() {
-    try {
-        const res = await fetch("/api/weather/current");
-        const w = await res.json();
+        // RSSI quality estimate
+        let rssiClass = "good";
+        if (n.rssi < -70) rssiClass = "warn";
+        if (n.rssi < -85) rssiClass = "bad";
 
-        weatherBox.innerHTML = `
-            🌡 ${w.temp}°C |
-            ☁ ${w.condition} |
-            💧 ${w.humidity}%
+        // battery status
+        let batt = n.battery ?? null;
+        let battText = batt ? batt.toFixed(2) + "V" : "N/A";
+
+        html += `
+        <div class="card">
+
+            <h5>🌱 ${id}</h5>
+
+            <div class="small">IP: ${n.ip ?? "unknown"}</div>
+
+            <p class="${rssiClass}">
+                📡 RSSI: ${n.rssi ?? "?"} dBm
+            </p>
+
+            <p>🔋 Battery: ${battText}</p>
+
+            <p>💧 Moisture: ${n.average?.toFixed(1) ?? "?"}</p>
+
+            <p>🚰 Valve: ${n.valve_state ?? "?"}</p>
+
+        </div>
         `;
-    } catch {
-        weatherBox.innerHTML = "⚠ unavailable";
-    }
-}
-
-// ------------------
-// GRAPH
-// ------------------
-function createChart() {
-    chart = new Chart(document.getElementById("chart"), {
-        data: {
-            labels: buffer.labels,
-            datasets: [
-                {
-                    label: "Moisture",
-                    data: buffer.moisture,
-                    type: "line",
-                    tension: 0.4,
-                    pointRadius: 0
-                },
-                {
-                    label: "Rain",
-                    data: buffer.rain,
-                    type: "bar",
-                    yAxisID: "y1"
-                },
-                {
-                    label: "Sun",
-                    data: buffer.sun,
-                    type: "line",
-                    borderDash: [5,5],
-                    pointRadius: 0,
-                    yAxisID: "y1"
-                },
-                {
-                    label: "Valve",
-                    data: buffer.valve,
-                    type: "line",
-                    stepped: true,
-                    yAxisID: "y2",
-                    pointRadius: 0
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    title: { display: true, text: "Moisture" }
-                },
-                y1: {
-                    position: "right",
-                    grid: { drawOnChartArea: false },
-                    title: { display: true, text: "Weather" }
-                },
-                y2: {
-                    position: "right",
-                    min: 0,
-                    max: 1,
-                    display: false
-                }
-            }
-        }
-    });
-}
-
-// ------------------
-// STREAM
-// ------------------
-async function update() {
-    if (!currentBed) return;
-
-    const res = await fetch(`/api/beds/${currentBed}/full-graph`);
-    const d = await res.json();
-
-    const i = d.moisture.length - 1;
-
-    // normalize valve
-    let valve = d.valve[i];
-    if (typeof valve === "string")
-        valve = valve.toLowerCase() === "on" ? 1 : 0;
-    else
-        valve = valve ? 1 : 0;
-
-    buffer.moisture.push(d.moisture[i]);
-    buffer.rain.push(d.rain?.[i] || 0);
-    buffer.sun.push(d.sun?.[i] ? 1 : 0);
-    buffer.valve.push(valve);
-    buffer.labels.push(new Date().toLocaleTimeString());
-
-    if (buffer.labels.length > MAX) {
-        Object.keys(buffer).forEach(k => buffer[k].shift());
     }
 
-    if (!chart) createChart();
-    else chart.update();
+    nodes.innerHTML = html;
 }
 
-// ------------------
-// INIT
-// ------------------
-async function init() {
-    await loadBeds();
-    await loadSystem();
-
-    setInterval(loadSystem, 5000);
-    setInterval(loadStatus, 2000);
-    setInterval(loadWeather, 10000);
-    setInterval(update, 2000);
-}
-
-init();
+setInterval(loadNodes, 3000);
+loadNodes();
 
 </script>
 
 </body>
 </html>
 """)
-
-
 
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
@@ -1658,7 +1497,7 @@ def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
     <a class="navbar-brand" href="/">🌱 Smart Garden</a>
     <div class="navbar-nav">
       <a class="nav-link" href="/">Dashboard</a>
-      <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
+      <a class="nav-link" href="/nodes">🌿 Devices</a>
       <a class="nav-link" href="/docs">API Docs</a>
       <a class="nav-link" href="/about">About</a>
     </div>
