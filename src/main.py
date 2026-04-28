@@ -1998,6 +1998,34 @@ def weather_summary():
     }
 
 
-@app.get("/api/weather/forecast")
-def weather_forecast():
-    return {"day1": "🌧 70% rain", "day2": "☀ clear", "day3": "🌦 light rain"}
+from pydantic import BaseModel
+
+class Heartbeat(BaseModel):
+    bed_id: str
+
+
+from fastapi import Query
+from datetime import datetime
+
+node_last_seen = {}
+
+@app.post("/api/node/heartbeat")
+def node_heartbeat(
+    bed_id: str = Query(...),
+    ip: str = Query(None),
+    rssi: int = Query(None)
+):
+    now = datetime.utcnow().isoformat()
+
+    node_last_seen[bed_id] = {
+        "bed_id": bed_id,
+        "ip": ip,
+        "rssi": rssi,
+        "last_seen": now
+    }
+
+    return {
+        "ok": True,
+        "bed_id": bed_id,
+        "last_seen": now
+    }
