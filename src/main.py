@@ -1342,6 +1342,13 @@ body {
     border:1px solid #2a2f3a;
     border-radius:16px;
     padding:16px;
+    transition: 0.2s ease;
+}
+
+.card:hover {
+    transform: translateY(-3px);
+    border-color: #00ff9a;
+    box-shadow: 0 0 12px rgba(0,255,154,0.15);
 }
 
 .grid {
@@ -1357,6 +1364,11 @@ body {
 .small {
     font-size:12px;
     color:#9aa4b2;
+}
+
+a.node-link {
+    text-decoration:none;
+    color:inherit;
 }
 </style>
 </head>
@@ -1375,7 +1387,8 @@ body {
       <a class="nav-link" href="/about">About</a>
     </div>
 
-    </nav>
+  </div>
+</nav>
 
 <div class="container py-4">
 
@@ -1390,7 +1403,7 @@ body {
 let meta = {};
 
 /* -------------------------
-   LOAD META (IMPORTANT PART)
+   META
 ------------------------- */
 async function loadMeta() {
     const res = await fetch("/api/beds/meta");
@@ -1398,7 +1411,7 @@ async function loadMeta() {
 }
 
 /* -------------------------
-   LOAD NODES
+   NODES
 ------------------------- */
 async function loadNodes() {
 
@@ -1415,31 +1428,35 @@ async function loadNodes() {
         const name = m.name || bedId;
         const icon = m.icon || "🌱";
 
-        // RSSI quality
+        // RSSI styling
         let rssiClass = "good";
         if ((n.rssi ?? -100) < -70) rssiClass = "warn";
         if ((n.rssi ?? -100) < -85) rssiClass = "bad";
 
         html += `
-        <div class="card">
+        <a class="node-link" href="/device/${bedId}">
 
-            <h5>${icon} ${name}</h5>
+            <div class="card">
 
-            <div class="small">ID: ${bedId}</div>
+                <h5>${icon} ${name}</h5>
 
-            <div class="small">IP: ${n.ip ?? "unknown"}</div>
+                <div class="small">ID: ${bedId}</div>
 
-            <p class="${rssiClass}">
-                📡 RSSI: ${n.rssi ?? "?"} dBm
-            </p>
+                <div class="small">IP: ${n.ip ?? "unknown"}</div>
 
-            <p>🔋 Battery: ${n.battery ? n.battery.toFixed(2) + "V" : "N/A"}</p>
+                <p class="${rssiClass}">
+                    📡 RSSI: ${n.rssi ?? "?"} dBm
+                </p>
 
-            <p>💧 Moisture: ${n.average?.toFixed(1) ?? "?"}</p>
+                <p>🔋 Battery: ${n.battery ? n.battery.toFixed(2) + "V" : "N/A"}</p>
 
-            <p>🚰 Valve: ${n.valve_state ?? "?"}</p>
+                <p>💧 Moisture: ${n.average?.toFixed(1) ?? "?"}</p>
 
-        </div>
+                <p>🚰 Valve: ${n.valve_state ?? "?"}</p>
+
+            </div>
+
+        </a>
         `;
     }
 
@@ -1685,6 +1702,220 @@ loadAnalytics();
 """.replace("{bed_id}", bed_id).replace("{title}", title)
 
     return HTMLResponse(content=html)
+
+
+from fastapi.responses import HTMLResponse
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
+
+# assumes you already have:
+# BedMetaDB, BedReading, get_db
+# and maybe node_last_seen from heartbeat
+
+node_last_seen = {}  # from heartbeat endpoint
+
+from fastapi.responses import HTMLResponse
+from sqlalchemy.orm import Session
+from fastapi import Depends
+
+@app.get("/device/{bed_id}", response_class=HTMLResponse)
+def device_page(bed_id: str, db: Session = Depends(get_db)):
+
+    meta = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
+    name = meta.name if meta and meta.name else bed_id
+    icon = meta.icon if meta and meta.icon else "🌱"
+
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<title>{icon} {name} · Device</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body {{
+    background:#0f1115;
+    color:white;
+    font-family: system-ui;
+}}
+
+.card {{
+    background:#1b1f2a;
+    border:1px solid #2a2f3a;
+    border-radius:16px;
+    padding:16px;
+    margin-bottom:12px;
+}}
+
+.good {{ color:#00ff9a; }}
+.bad  {{ color:#ff4d4d; }}
+
+.grid {{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:10px;
+}}
+
+.small {{
+    font-size:12px;
+    color:#9aa4b2;
+}}
+
+.chart-wrap {{
+    height:260px;
+}}
+</style>
+</head>
+
+<body>
+
+<nav class="navbar navbar-dark bg-black border-bottom border-secondary">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="/">🌱 Smart Garden</a>
+    <a class="nav-link text-white" href="/nodes">← Back to Nodes</a>
+  </div>
+</nav>
+
+<div class="container py-4">
+
+<h2>{icon} {name}</h2>
+
+<div id="status" class="card">Loading...</div>
+
+<div class="grid">
+
+    <div class="card">
+        <div class="small">IP Address</div>
+        <h5 id="ip">-</h5>
+    </div>
+
+    <div class="card">
+        <div class="small">RSSI</div>
+        <h5 id="rssi">-</h5>
+    </div>
+
+    <div class="card">
+        <div class="small">Battery</div>
+        <h5 id="battery">-</h5>
+    </div>
+
+</div>
+
+<div class="card">
+    <h5>📡 RSSI History</h5>
+    <div class="chart-wrap">
+        <canvas id="rssiChart"></canvas>
+    </div>
+</div>
+
+</div>
+
+<script>
+
+let rssiChart = null;
+
+async function load() {{
+
+    const res = await fetch("/api/beds/latest");
+    const data = await res.json();
+
+    const b = data["{bed_id}"];
+    if (!b) return;
+
+    // --------------------
+    // ONLINE STATUS
+    // --------------------
+    const now = Date.now();
+    const lastSeen = b.last_seen ? new Date(b.last_seen).getTime() : now;
+    const online = (now - lastSeen) < 15000;
+
+    document.getElementById("status").innerHTML =
+        online
+        ? "<span class='good'>🟢 ONLINE</span>"
+        : "<span class='bad'>🔴 OFFLINE</span>";
+
+    document.getElementById("ip").innerText = b.ip ?? "unknown";
+    document.getElementById("rssi").innerText = b.rssi ?? "N/A";
+    document.getElementById("battery").innerText =
+        b.battery ? b.battery.toFixed(2) + "V" : "N/A";
+
+    // --------------------
+    // RSSI HISTORY ONLY
+    // --------------------
+    const hist = await fetch("/api/beds/{bed_id}/full-graph").then(r => r.json());
+
+    const rssi = (hist.rssi || []).map(v => v ?? -100);
+    const timestamps = hist.timestamps || [];
+
+    const labels = timestamps.map(t =>
+        new Date(t).toLocaleTimeString()
+    );
+
+    const minLen = Math.min(labels.length, rssi.length);
+    const safeLabels = labels.slice(0, minLen);
+    const safeRSSI = rssi.slice(0, minLen);
+
+    if (!rssiChart) {{
+        rssiChart = new Chart(
+            document.getElementById("rssiChart"),
+            {{
+                type: "line",
+                data: {{
+                    labels: safeLabels,
+                    datasets: [{{
+                        label: "RSSI (dBm)",
+                        data: safeRSSI,
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.3
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {{
+                        y: {{
+                            title: {{ display: true, text: "Signal Strength" }}
+                        }}
+                    }}
+                }}
+            }}
+        );
+    }} else {{
+        rssiChart.data.labels = safeLabels;
+        rssiChart.data.datasets[0].data = safeRSSI;
+        rssiChart.update();
+    }}
+
+}}
+
+load();
+setInterval(load, 3000);
+
+</script>
+
+</body>
+</html>
+"""
+
+    return HTMLResponse(html)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 @app.get("/api/will-rain")
