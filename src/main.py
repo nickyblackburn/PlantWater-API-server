@@ -1313,9 +1313,11 @@ Dashboard UI (Chart.js)
 """
 
 
+from fastapi.responses import HTMLResponse
+
 @app.get("/health-dashboard", response_class=HTMLResponse)
 def garden_health_page():
-    return """
+    return HTMLResponse(content="""
 <!DOCTYPE html>
 <html>
 <head>
@@ -1332,90 +1334,48 @@ body {
 }
 
 .card {
-    background: rgba(27, 31, 42, 0.85);
-    border: 1px solid rgba(42, 47, 58, 0.6);
+    background: rgba(27,31,42,0.85);
+    border: 1px solid rgba(42,47,58,0.6);
     border-radius: 18px;
-    backdrop-filter: blur(10px);
     margin-bottom: 12px;
 }
 
-.metric .label {
-    font-size: 12px;
-    color: #9aa4b2;
-}
-
-.metric .value {
-    font-size: 28px;
-    font-weight: 700;
-}
-
-.metric.good .value { color: #00ff9a; }
-.metric.danger .value { color: #ff4d4d; }
-
-.navbar {
-    background:#0b0d10;
-    border-bottom:1px solid #2a2f3a;
-}
-
 .chart-wrap {
-    position: relative;
-    height: 320px;
+    height: 300px;
 }
 </style>
 </head>
 
 <body>
 
-<nav class="navbar navbar-expand-lg navbar-dark">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="/">🌱 Smart Garden</a>
-    <div class="navbar-nav">
-      <a class="nav-link" href="/">Dashboard</a>
-      <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
-      <a class="nav-link" href="/docs">API Docs</a>
-      <a class="nav-link" href="/about">About</a>
-    </div>
-  </div>
-</nav>
-
 <div class="container py-4">
 
-<h1 class="mb-3">🌿 Garden Intelligence</h1>
+<h1>🌿 Garden Intelligence (LIVE)</h1>
 
-<div class="card p-4">
-    <h5>🧠 System Overview</h5>
-    <div class="row text-center">
-        <div class="col">
-            <div class="metric">
-                <div class="label">Total Beds</div>
-                <div class="value" id="totalBeds">-</div>
-            </div>
-        </div>
-
-        <div class="col">
-            <div class="metric danger">
-                <div class="label">Dry Beds</div>
-                <div class="value" id="dryBeds">-</div>
-            </div>
-        </div>
-
-        <div class="col">
-            <div class="metric good">
-                <div class="label">Watering</div>
-                <div class="value" id="wateringBeds">-</div>
-            </div>
-        </div>
-    </div>
+<!-- SYSTEM -->
+<div class="card p-3">
+    <div>Total Beds: <b id="totalBeds">-</b></div>
+    <div>Dry Beds: <b id="dryBeds">-</b></div>
+    <div>Watering: <b id="wateringBeds">-</b></div>
 </div>
 
-<div class="card p-4">
-    <h5>🌱 Active Bed</h5>
-    <select id="bedSelect" class="form-select mb-3"></select>
-    <div id="liveStatus">Loading...</div>
+<!-- SELECT -->
+<div class="card p-3">
+    <select id="bedSelect" class="form-select"></select>
 </div>
 
-<div class="card p-4">
-    <h5>📈 Moisture + Weather Stream</h5>
+<!-- STATUS -->
+<div class="card p-3" id="status"></div>
+
+<!-- WEATHER -->
+<div class="card p-3">
+    <h5>🌦 Live Weather</h5>
+    <div id="weatherBox">Loading...</div>
+</div>
+
+<!-- GRAPH -->
+<div class="card p-3">
+    <h5>📈 Live Stream</h5>
     <div class="chart-wrap">
         <canvas id="chart"></canvas>
     </div>
@@ -1423,202 +1383,216 @@ body {
 
 </div>
 
-<footer style="text-align:center; padding:20px; color:#9aa4b2; border-top:1px solid #2a2f3a; margin-top:40px;">
-    Made with 💖 Nicky Blackburn
-</footer>
-
 <script>
-const MAX_POINTS = 60;
 
-let moistureBuffer = [];
-let valveBuffer = [];
-let rainBuffer = [];
-let sunBuffer = [];
-let labelBuffer = [];
-
-let chart = null;
 let currentBed = null;
-let bedMeta = {};
+let chart = null;
 
-function getBedFromURL() {
-    return new URLSearchParams(window.location.search).get("bed");
-}
+let buffer = {
+    labels: [],
+    moisture: [],
+    rain: [],
+    sun: [],
+    valve: []
+};
 
-function setBedURL(bed) {
-    window.history.replaceState(null, "", `?bed=${bed}`);
-}
+const MAX = 50;
 
-async function loadMeta() {
-    const res = await fetch("/api/beds/meta");
-    bedMeta = await res.json();
-}
-
-async function loadSystemOverview() {
-    const res = await fetch("/api/system/overview");
-    const data = await res.json();
-
-    totalBeds.innerText = data.total_beds;
-    dryBeds.innerText = data.dry_beds;
-    wateringBeds.innerText = data.watering_beds;
-}
-
+// ------------------
+// LOAD BEDS
+// ------------------
 async function loadBeds() {
-    const beds = await fetch('/api/beds').then(r => r.json());
+    const beds = await fetch('/api/beds').then(r=>r.json());
     const select = document.getElementById("bedSelect");
+
     select.innerHTML = "";
 
-    const urlBed = getBedFromURL();
-
-    for (const bed in beds) {
-        const m = bedMeta[bed] || {};
+    for (const b in beds) {
         const opt = document.createElement("option");
-        opt.value = bed;
-        opt.text = `${m.icon || "🌱"} ${m.name || bed}`;
+        opt.value = b;
+        opt.text = b;
         select.appendChild(opt);
     }
 
-    currentBed = urlBed && beds[urlBed] ? urlBed : Object.keys(beds)[0];
+    currentBed = Object.keys(beds)[0];
     select.value = currentBed;
-
-    resetStream();
 
     select.onchange = () => {
         currentBed = select.value;
-        setBedURL(currentBed);
-        resetStream();
+        reset();
     };
 }
 
-function resetStream() {
-    moistureBuffer = [];
-    valveBuffer = [];
-    rainBuffer = [];
-    sunBuffer = [];
-    labelBuffer = [];
-
+// ------------------
+// RESET
+// ------------------
+function reset() {
+    buffer = { labels: [], moisture: [], rain: [], sun: [], valve: [] };
     if (chart) chart.destroy();
     chart = null;
 }
 
-async function loadStatus() {
-    if (!currentBed) return;
+// ------------------
+// SYSTEM
+// ------------------
+async function loadSystem() {
+    const res = await fetch('/api/system/overview');
+    const d = await res.json();
 
+    totalBeds.innerText = d.total_beds;
+    dryBeds.innerText = d.dry_beds;
+    wateringBeds.innerText = d.watering_beds;
+}
+
+// ------------------
+// STATUS
+// ------------------
+async function loadStatus() {
     const res = await fetch('/api/beds/latest');
     const data = await res.json();
 
     const b = data[currentBed];
-    const meta = bedMeta[currentBed] || {};
-
     if (!b) return;
 
-    let status = "🟢 Healthy";
-    if (b.average > 700) status = "🔴 Dry";
-    else if (b.average < 300) status = "🔵 Too Wet";
-
-    liveStatus.innerHTML = `
-        <h5>${meta.icon || "🌱"} ${meta.name || currentBed}</h5>
-        <div>💧 ${b.average.toFixed(1)}</div>
-        <div>🚰 ${b.valve_state}</div>
-        <div class="mt-2">${status}</div>
+    status.innerHTML = `
+        💧 ${b.average.toFixed(1)} |
+        🚰 ${b.valve_state}
     `;
 }
 
-function createChart() {
-    const ctx = document.getElementById("chart");
+// ------------------
+// WEATHER
+// ------------------
+async function loadWeather() {
+    try {
+        const res = await fetch("/api/weather/current");
+        const w = await res.json();
 
-    chart = new Chart(ctx, {
+        weatherBox.innerHTML = `
+            🌡 ${w.temp}°C |
+            ☁ ${w.condition} |
+            💧 ${w.humidity}%
+        `;
+    } catch {
+        weatherBox.innerHTML = "⚠ unavailable";
+    }
+}
+
+// ------------------
+// GRAPH
+// ------------------
+function createChart() {
+    chart = new Chart(document.getElementById("chart"), {
         data: {
-            labels: labelBuffer,
+            labels: buffer.labels,
             datasets: [
                 {
-                    label: '💧 Moisture',
-                    data: moistureBuffer,
-                    type: 'line',
+                    label: "Moisture",
+                    data: buffer.moisture,
+                    type: "line",
                     tension: 0.4,
                     pointRadius: 0
                 },
-               
                 {
-                    label: '🌧️ Rain',
-                    data: rainBuffer,
-                    type: 'bar',
-                    yAxisID: 'y1'
+                    label: "Rain",
+                    data: buffer.rain,
+                    type: "bar",
+                    yAxisID: "y1"
                 },
                 {
-                    label: '☀️ Sun',
-                    data: sunBuffer,
-                    type: 'line',
+                    label: "Sun",
+                    data: buffer.sun,
+                    type: "line",
                     borderDash: [5,5],
                     pointRadius: 0,
-                    yAxisID: 'y1'
+                    yAxisID: "y1"
+                },
+                {
+                    label: "Valve",
+                    data: buffer.valve,
+                    type: "line",
+                    stepped: true,
+                    yAxisID: "y2",
+                    pointRadius: 0
                 }
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            animation: { duration: 400 },
-
             scales: {
-                x: { display: false },
                 y: {
-                    beginAtZero: true,
-                    title: { display: true, text: 'Moisture' }
+                    title: { display: true, text: "Moisture" }
                 },
                 y1: {
-                    beginAtZero: true,
-                    position: 'right',
+                    position: "right",
                     grid: { drawOnChartArea: false },
-                    title: { display: true, text: 'Weather' }
+                    title: { display: true, text: "Weather" }
+                },
+                y2: {
+                    position: "right",
+                    min: 0,
+                    max: 1,
+                    display: false
                 }
             }
         }
     });
 }
 
-async function streamUpdate() {
+// ------------------
+// STREAM
+// ------------------
+async function update() {
     if (!currentBed) return;
 
     const res = await fetch(`/api/beds/${currentBed}/full-graph`);
-    const data = await res.json();
+    const d = await res.json();
 
-    const i = data.moisture.length - 1;
+    const i = d.moisture.length - 1;
 
-    moistureBuffer.push(data.moisture[i]);
-    valveBuffer.push(data.valve[i]);
+    // normalize valve
+    let valve = d.valve[i];
+    if (typeof valve === "string")
+        valve = valve.toLowerCase() === "on" ? 1 : 0;
+    else
+        valve = valve ? 1 : 0;
 
-    // fallback simulated weather if backend not ready
-    rainBuffer.push(data.rain ? data.rain[i] : (Math.random() < 0.1 ? 5 : 0));
-    sunBuffer.push(data.sun ? data.sun[i] : Math.random() * 10);
+    buffer.moisture.push(d.moisture[i]);
+    buffer.rain.push(d.rain?.[i] || 0);
+    buffer.sun.push(d.sun?.[i] ? 1 : 0);
+    buffer.valve.push(valve);
+    buffer.labels.push(new Date().toLocaleTimeString());
 
-    labelBuffer.push(new Date().toLocaleTimeString());
-
-    if (moistureBuffer.length > MAX_POINTS) {
-        moistureBuffer.shift();
-        valveBuffer.shift();
-        rainBuffer.shift();
-        sunBuffer.shift();
-        labelBuffer.shift();
+    if (buffer.labels.length > MAX) {
+        Object.keys(buffer).forEach(k => buffer[k].shift());
     }
 
     if (!chart) createChart();
     else chart.update();
 }
 
-(async function init() {
-    await loadMeta();
+// ------------------
+// INIT
+// ------------------
+async function init() {
     await loadBeds();
-    await loadSystemOverview();
+    await loadSystem();
 
-    setInterval(loadSystemOverview, 5000);
-    setInterval(loadStatus, 3000);
-    setInterval(streamUpdate, 2000);
-})();
+    setInterval(loadSystem, 5000);
+    setInterval(loadStatus, 2000);
+    setInterval(loadWeather, 10000);
+    setInterval(update, 2000);
+}
+
+init();
+
 </script>
 
 </body>
 </html>
-"""
+""")
+
 
 
 from fastapi.responses import HTMLResponse
