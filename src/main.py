@@ -119,7 +119,7 @@ class BedMetaDB(Base):
 
     name = Column(String, default="")
     icon = Column(String, default="🌱")
-
+    ip = Column(String)   
 
 # BedReading: Records sensor data from a plant bed at specific timestamps
 # Each reading captures all sensors' measurements and system state
@@ -868,6 +868,8 @@ def latest(db: Session = Depends(get_db)):
                 "bed_id": r.bed_id,
                 "average": r.average,
                 "valve_state": valve_state,
+                "rssi": r.rssi,
+                "ip": "placeholder_ip",  # replace with actual IP if available
                 "timestamp": r.timestamp,
             }
 
@@ -1312,6 +1314,9 @@ Dashboard UI (Chart.js)
 </html>
 """
 
+###################################################
+## 🌿 DEVICES PAGE - REAL-TIME NODE STATUSES
+####################################################
 
 from fastapi.responses import HTMLResponse
 
