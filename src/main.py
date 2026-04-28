@@ -1715,9 +1715,6 @@ from datetime import datetime, timedelta
 
 node_last_seen = {}  # from heartbeat endpoint
 
-from fastapi.responses import HTMLResponse
-from sqlalchemy.orm import Session
-from fastapi import Depends
 
 @app.get("/device/{bed_id}", response_class=HTMLResponse)
 def device_page(bed_id: str, db: Session = Depends(get_db)):
@@ -1751,6 +1748,7 @@ body {{
 }}
 
 .good {{ color:#00ff9a; }}
+.warn {{ color:#ffcc00; }}
 .bad  {{ color:#ff4d4d; }}
 
 .grid {{
@@ -1802,6 +1800,11 @@ body {{
         <h5 id="battery">-</h5>
     </div>
 
+    <div class="card">
+        <div class="small">Moisture</div>
+        <h5 id="moisture">-</h5>
+    </div>
+
 </div>
 
 <div class="card">
@@ -1811,11 +1814,13 @@ body {{
     </div>
 </div>
 
+
+
 </div>
 
 <script>
 
-let rssiChart = null;
+let rssiChart, moistureChart;
 
 async function load() {{
 
@@ -1825,11 +1830,10 @@ async function load() {{
     const b = data["{bed_id}"];
     if (!b) return;
 
-    // --------------------
-    // ONLINE STATUS
-    // --------------------
-    const now = Date.now();
+    // ONLINE STATUS (heartbeat-based)
+    const now = new Date().getTime();
     const lastSeen = b.last_seen ? new Date(b.last_seen).getTime() : now;
+
     const online = (now - lastSeen) < 15000;
 
     document.getElementById("status").innerHTML =
@@ -1839,55 +1843,52 @@ async function load() {{
 
     document.getElementById("ip").innerText = b.ip ?? "unknown";
     document.getElementById("rssi").innerText = b.rssi ?? "N/A";
-    document.getElementById("battery").innerText =
-        b.battery ? b.battery.toFixed(2) + "V" : "N/A";
+    document.getElementById("battery").innerText = b.battery ? b.battery.toFixed(2) + "V" : "N/A";
+    document.getElementById("moisture").innerText = b.average?.toFixed(1) ?? "N/A";
 
-    // --------------------
-    // RSSI HISTORY ONLY
-    // --------------------
+    // HISTORY
     const hist = await fetch("/api/beds/{bed_id}/full-graph").then(r => r.json());
 
-    const rssi = (hist.rssi || []).map(v => v ?? -100);
-    const timestamps = hist.timestamps || [];
-
-    const labels = timestamps.map(t =>
-        new Date(t).toLocaleTimeString()
-    );
-
-    const minLen = Math.min(labels.length, rssi.length);
-    const safeLabels = labels.slice(0, minLen);
-    const safeRSSI = rssi.slice(0, minLen);
+    const rssi = hist.rssi || [];
+    const moisture = hist.moisture || [];
+    const labels = (hist.timestamps || []).map(t => new Date(t).toLocaleTimeString());
 
     if (!rssiChart) {{
-        rssiChart = new Chart(
-            document.getElementById("rssiChart"),
-            {{
-                type: "line",
-                data: {{
-                    labels: safeLabels,
-                    datasets: [{{
-                        label: "RSSI (dBm)",
-                        data: safeRSSI,
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        tension: 0.3
-                    }}]
-                }},
-                options: {{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {{
-                        y: {{
-                            title: {{ display: true, text: "Signal Strength" }}
-                        }}
-                    }}
-                }}
+        rssiChart = new Chart(document.getElementById("rssiChart"), {{
+            type: "line",
+            data: {{
+                labels,
+                datasets: [{{
+                    label: "RSSI",
+                    data: rssi,
+                    borderWidth: 2,
+                    pointRadius: 0
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false
             }}
-        );
-    }} else {{
-        rssiChart.data.labels = safeLabels;
-        rssiChart.data.datasets[0].data = safeRSSI;
-        rssiChart.update();
+        }});
+    }}
+
+    if (!moistureChart) {{
+        moistureChart = new Chart(document.getElementById("moistureChart"), {{
+            type: "line",
+            data: {{
+                labels,
+                datasets: [{{
+                    label: "Moisture",
+                    data: moisture,
+                    borderWidth: 2,
+                    pointRadius: 0
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false
+            }}
+        }});
     }}
 
 }}
@@ -1902,6 +1903,10 @@ setInterval(load, 3000);
 """
 
     return HTMLResponse(html)
+
+
+
+
 
 
 
