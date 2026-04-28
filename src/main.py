@@ -1988,7 +1988,6 @@ def get_mode(bed_id: str):
         "mode": active_valves.get(bed_id, {}).get("mode", "normal"),
     }
 
-
 @app.get("/api/beds/{bed_id}/full-graph")
 def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
 
@@ -2005,26 +2004,37 @@ def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
     timestamps = []
     moisture = []
     valve = []
+    rssi = []
 
     for r in rows:
-        timestamps.append(r.timestamp.isoformat() if r.timestamp else "")
+
+        # --------------------
+        # TIMESTAMP
+        # --------------------
+        timestamps.append(
+            r.timestamp.isoformat() if r.timestamp else ""
+        )
+
+        # --------------------
+        # MOISTURE
+        # --------------------
         moisture.append(r.average or 0)
 
-        # ✅ USE DATABASE HISTORY ONLY
-        if r.valve_state == "ON":
-            valve.append(1)
-        else:
-            valve.append(0)
-        timestamps = []
-        rssi = []
+        # --------------------
+        # VALVE (0/1)
+        # --------------------
+        valve.append(1 if r.valve_state == "ON" else 0)
 
-        
-        # SAFE RSSI HANDLING
-    
-        rssi_value = getattr(r, "rssi", None)
-        rssi.append(rssi_value if rssi_value is not None else -100)
+        # --------------------
+        # RSSI (SAFE)
+        # --------------------
+        try:
+            rssi_val = float(r.rssi) if r.rssi is not None else -100
+        except:
+            rssi_val = -100
 
-        print (f"Reading: {r.timestamp} - Moisture: {r.average} - Valve: {r.valve_state} - RSSI: {rssi[-1]}")
+        rssi.append(rssi_val)
+
     return {
         "timestamps": timestamps,
         "moisture": moisture,
