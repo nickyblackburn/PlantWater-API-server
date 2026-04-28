@@ -1089,6 +1089,7 @@ async function loadBeds() {
             </div>
             `;
         }
+        
 
         document.getElementById("beds").innerHTML = html;
 
@@ -1399,6 +1400,10 @@ a.node-link {
 
 <div id="nodes" class="grid"></div>
 
+
+<footer style="text-align:center; padding:20px; color:#9aa4b2; border-top:1px solid #2a2f3a; margin-top:40px;">
+    Made with 💖 Nicky Blackburn
+</footer>
 </div>
 
 <script>
@@ -1589,8 +1594,14 @@ def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
     <div class="chart-wrap">
         <canvas id="moistureChart"></canvas>
     </div>
+
+
+    
 </div>
 
+<footer style="text-align:center; padding:20px; color:#9aa4b2; border-top:1px solid #2a2f3a; margin-top:40px;">
+    Made with 💖 Nicky Blackburn
+</footer>
 
 
 </div>
@@ -1809,6 +1820,11 @@ body {{
         <canvas id="valveChart"></canvas>
     </div>
 </div>
+
+
+<footer style="text-align:center; padding:20px; color:#9aa4b2; border-top:1px solid #2a2f3a; margin-top:40px;">
+    Made with 💖 Nicky Blackburn
+</footer>
 
 </div>
 
