@@ -1621,6 +1621,231 @@ async function streamUpdate() {
 """
 
 
+from fastapi.responses import HTMLResponse
+from sqlalchemy.orm import Session
+from fastapi import Depends
+
+@app.get("/bed/{bed_id}/analytics", response_class=HTMLResponse)
+def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
+
+    meta = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
+
+    bed_name = meta.name if meta and meta.name else bed_id
+    bed_icon = meta.icon if meta and meta.icon else "🌱"
+    title = f"{bed_icon} {bed_name} Analytics"
+
+    html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{title}</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            background: radial-gradient(circle at top, #151922, #0f1115);
+            color: #e6eaf2;
+            font-family: system-ui, sans-serif;
+        }
+
+        .card {
+            background: linear-gradient(145deg, #1b1f2a, #141821);
+            border: 1px solid #2a2f3a;
+            border-radius: 18px;
+            margin-bottom: 14px;
+        }
+
+        .chart-wrap {
+            position: relative;
+            height: 320px;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }
+
+        .stat {
+            background: #12151c;
+            padding: 12px;
+            border-radius: 12px;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="/">🌱 Smart Garden</a>
+    <div class="navbar-nav">
+      <a class="nav-link" href="/">Dashboard</a>
+      <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
+      <a class="nav-link" href="/docs">API Docs</a>
+      <a class="nav-link" href="/about">About</a>
+    </div>
+  </div>
+</nav>
+
+<div class="container py-4">
+
+<h2>{title}</h2>
+
+<div class="card p-3" id="summary">Loading...</div>
+
+<div class="card p-3">
+    <h5>💧 Moisture</h5>
+    <div class="chart-wrap">
+        <canvas id="moistureChart"></canvas>
+    </div>
+</div>
+
+<div class="card p-3">
+    <h5>🌦 Rain + Valve</h5>
+    <div class="chart-wrap">
+        <canvas id="weatherChart"></canvas>
+    </div>
+</div>
+
+</div>
+
+<script>
+
+let moistureChart;
+let weatherChart;
+
+async function loadAnalytics() {
+
+    const res = await fetch("/api/beds/{bed_id}/full-graph");
+    const data = await res.json();
+
+    const life = await fetch("/api/beds/{bed_id}/lifetime").then(r => r.json());
+
+    const timestamps = data.timestamps || [];
+    const moisture = data.moisture || [];
+    const rain = data.rain || [];
+
+    // -------------------------
+    // VALVE NORMALIZATION
+    // -------------------------
+    const valveRaw = data.valve || [];
+    const valve = valveRaw.map(v => {
+        if (typeof v === "string") {
+            return v.toLowerCase().trim() === "on" ? 1 : 0;
+        }
+        return v ? 1 : 0;
+    });
+
+    // -------------------------
+    // ALIGN EVERYTHING
+    // -------------------------
+    const minLen = Math.min(
+        timestamps.length,
+        moisture.length,
+        rain.length,
+        valve.length
+    );
+
+    const labels = timestamps.slice(0, minLen).map(t =>
+        new Date(t).toLocaleTimeString()
+    );
+
+    const safeMoisture = moisture.slice(0, minLen);
+    const safeRain = rain.slice(0, minLen);
+    const safeValve = valve.slice(0, minLen);
+
+    // -------------------------
+    // SUMMARY
+    // -------------------------
+    const avgMoisture = safeMoisture.length
+        ? (safeMoisture.reduce((a,b)=>a+b,0)/safeMoisture.length).toFixed(1)
+        : "0";
+
+    document.getElementById("summary").innerHTML =
+        "<div class='stat-grid'>" +
+        "<div class='stat'>💧 <b>" + avgMoisture + "</b> Avg</div>" +
+        "<div class='stat'>🚰 <b>" + (life.times_watered || 0) + "</b> Times watered</div>" +
+        "<div class='stat'>⏱ <b>" + (life.total_watering_minutes || 0) + "m</b></div>" +
+        "</div>";
+
+    // -------------------------
+    // MOISTURE CHART
+    // -------------------------
+    moistureChart = new Chart(
+        document.getElementById("moistureChart"),
+        {
+            type: "line",
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: "Moisture",
+                    data: safeMoisture,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        }
+    );
+
+    // -------------------------
+    // WEATHER + VALVE
+    // -------------------------
+    weatherChart = new Chart(
+        document.getElementById("weatherChart"),
+        {
+            type: "line",
+            data: {
+                labels: labels,
+                datasets: [
+                   
+                    {
+                        label: "Valve",
+                        data: safeValve,
+                        stepped: true,
+                        borderWidth: 2,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        min: 0,
+                        max: 1,
+                        ticks: {
+                            callback: v => v === 1 ? "ON" : v === 0 ? "OFF" : ""
+                        }
+                    }
+                }
+            }
+        }
+    );
+
+}
+
+loadAnalytics();
+
+</script>
+
+</body>
+</html>
+""".replace("{bed_id}", bed_id).replace("{title}", title)
+
+    return HTMLResponse(content=html)
+
+
 @app.get("/api/will-rain")
 def weather_api():
     return get_weather()
@@ -1731,12 +1956,14 @@ def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
         else:
             valve.append(0)
 
+        print (f"Reading: {r.timestamp} - Moisture: {r.average} - Valve: {r.valve_state}")
     return {
         "timestamps": timestamps,
         "moisture": moisture,
         "rain": [0] * len(timestamps),
         "valve": valve,
     }
+
 
 
 @app.get("/api/beds/{bed_id}/lifetime")
@@ -1913,483 +2140,14 @@ def system_overview(db: Session = Depends(get_db)):
         "healthy_beds": total - dry,
     }
 
-@app.get("/bed/{bed_id}/analytics", response_class=HTMLResponse)
-def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
-
-    # -------------------------
-    # FETCH BED META
-    # -------------------------
-    meta = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
-
-    bed_name = meta.name if meta and meta.name else bed_id
-    bed_icon = meta.icon if meta and meta.icon else "🌱"
-    title = f"{bed_icon} {bed_name} Analytics"
-
-    html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <title>{title}</title>
-
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-    <style>
-        body {{
-            background: radial-gradient(circle at top, #151922, #0f1115);
-            color: #e6eaf2;
-            font-family: system-ui, sans-serif;
-        }}
-
-        .card {{
-            background: linear-gradient(145deg, #1b1f2a, #141821);
-            border: 1px solid #2a2f3a;
-            border-radius: 18px;
-            margin-bottom: 14px;
-        }}
-
-        .chart-wrap {{
-            position: relative;
-            height: 320px;
-        }}
-
-        .stat-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 12px;
-        }}
-
-        .stat {{
-            background: #12151c;
-            padding: 12px;
-            border-radius: 12px;
-            text-align: center;
-        }}
-
-        .forecast-grid {{
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-        }}
-
-        .forecast-day {{
-            background: #12151c;
-            padding: 12px;
-            border-radius: 12px;
-            text-align: center;
-        }}
-    </style>
-</head>
-
-<body>
-<nav class="navbar navbar-expand-lg navbar-dark">
-  <div class="container-fluid">
-
-    <a class="navbar-brand" href="/">🌱 Smart Garden</a>
-
-    <div class="navbar-nav">
-      <a class="nav-link" href="/">Dashboard</a>
-      <a class="nav-link" href="/health-dashboard">🌿 Intelligence</a>
-      <a class="nav-link" href="/docs">API Docs</a>
-      <a class="nav-link" href="/about">About</a>
-    </div>
-
-  </div>
-</nav>
-<div class="container py-4">
-
-<h2>{title}</h2>
-
-<div class="card p-3" id="summary">Loading stats...</div>
-
-<div class="card p-3">
-    <h5>🌤 3-Day Forecast</h5>
-    <div id="forecast">Loading forecast...</div>
-</div>
-
-<div class="card p-3">
-    <h5>💧 Moisture Over Time</h5>
-    <div class="chart-wrap">
-        <canvas id="moistureChart"></canvas>
-    </div>
-</div>
-
-<div class="card p-3">
-    <h5>🌦 Weather (Rain + Sun Presence)</h5>
-    <div class="chart-wrap">
-        <canvas id="weatherChart"></canvas>
-    </div>
-</div>
-
-</div>
-
-<script>
-
-let moistureChart;
-let weatherChart;
-
-async function loadAnalytics() {{
-
-    const res = await fetch(`/api/beds/{bed_id}/full-graph`);
-    const data = await res.json();
-
-    const life = await fetch(`/api/beds/{bed_id}/lifetime`).then(r => r.json());
-
-    const labels = (data.timestamps || []).map(t =>
-        new Date(t).toLocaleTimeString()
-    );
-
-    const moisture = data.moisture || [];
-    const rain = data.rain || [];
-    const sunRaw = data.sun || [];
-
-    // -------------------------
-    // ☀️ FIX: Normalize Sun → 0 or 1
-    // -------------------------
-    const sun = sunRaw.map(v => v > 0 ? 1 : 0);
-
-    const avgMoisture = moisture.length
-        ? (moisture.reduce((a,b)=>a+b,0)/moisture.length).toFixed(1)
-        : "0";
-
-    // -------------------------
-    // SUMMARY
-    // -------------------------
-    document.getElementById("summary").innerHTML = `
-        <div class="stat-grid">
-            <div class="stat">💧<b>${{avgMoisture}}</b> Avg Moisture</div>
-            <div class="stat">🚰<b>${{life.times_watered || 0}}</b> Watered</div>
-            <div class="stat">⏱<b>${{life.total_watering_minutes || 0}}m</b> Total</div>
-        </div>
-    `;
-
-    // -------------------------
-    // MOISTURE CHART
-    // -------------------------
-    moistureChart = new Chart(
-        document.getElementById("moistureChart"),
-        {{
-            type: "line",
-            data: {{
-                labels,
-                datasets: [{{
-                    label: "Moisture",
-                    data: moisture,
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    tension: 0.4,
-                    fill: true
-                }}]
-            }},
-            options: {{
-                responsive: true,
-                maintainAspectRatio: false
-            }}
-        }}
-    );
-
-    // -------------------------
-    // WEATHER CHART (FIXED)
-    // -------------------------
-    weatherChart = new Chart(
-        document.getElementById("weatherChart"),
-        {{
-            type: "bar",
-            data: {{
-                labels,
-                datasets: [
-                    {{
-                        label: "Rain",
-                        data: rain.length ? rain : Array(labels.length).fill(0)
-                    }},
-                    {{
-                        label: "Sun",
-                        type: "line",
-                        data: sun,
-                        stepped: true,
-                        pointRadius: 0
-                    }}
-                ]
-            }},
-            options: {{
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {{
-                    y: {{
-                        ticks: {{
-                            callback: v => v === 1 ? "☀️" : ""
-                        }},
-                        suggestedMax: 1
-                    }}
-                }}
-            }}
-        }}
-    );
-
-    // -------------------------
-    // FORECAST
-    // -------------------------
-    try {{
-        const forecastRes = await fetch("/api/weather/forecast");
-        const forecast = await forecastRes.json();
-
-        document.getElementById("forecast").innerHTML = `
-            <div class="forecast-grid">
-                <div class="forecast-day">🌤<br><b>${{forecast.day1}}</b></div>
-                <div class="forecast-day">🌤<br><b>${{forecast.day2}}</b></div>
-                <div class="forecast-day">🌤<br><b>${{forecast.day3}}</b></div>
-            </div>
-        `;
-    }} catch (e) {{
-        document.getElementById("forecast").innerHTML =
-            "⚠ Forecast unavailable";
-    }}
-}}
-
-loadAnalytics();
-
-</script>
-
-</body>
-</html>
-"""
-
-    return html
-
-    # -------------------------
-    # FETCH BED META
-    # -------------------------
-    meta = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
-
-    bed_name = meta.name if meta and meta.name else bed_id
-    bed_icon = meta.icon if meta and meta.icon else "🌱"
-
-    title = f"{bed_icon} {bed_name} Analytics"
-
-    # -------------------------
-    # HTML TEMPLATE
-    # -------------------------
-    html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <title>{title}</title>
-
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-    <style>
-        body {{
-            background: radial-gradient(circle at top, #151922, #0f1115);
-            color: #e6eaf2;
-            font-family: system-ui, sans-serif;
-        }}
-
-        .navbar {{
-            backdrop-filter: blur(10px);
-            background: rgba(0,0,0,0.6) !important;
-        }}
-
-        .card {{
-            background: linear-gradient(145deg, #1b1f2a, #141821);
-            border: 1px solid #2a2f3a;
-            border-radius: 18px;
-            box-shadow: 0 6px 18px rgba(0,0,0,0.4);
-            margin-bottom: 14px;
-        }}
-
-        .chart-wrap {{
-            position: relative;
-            height: 320px;
-        }}
-
-        .stat-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 12px;
-        }}
-
-        .stat {{
-            background: #12151c;
-            padding: 12px;
-            border-radius: 12px;
-            text-align: center;
-        }}
-
-        .forecast-grid {{
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-        }}
-
-        .forecast-day {{
-            background: #12151c;
-            padding: 12px;
-            border-radius: 12px;
-            text-align: center;
-        }}
-    </style>
-</head>
-
-<body>
-
-<nav class="navbar navbar-dark border-bottom border-secondary">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="/">🌱 Smart Garden</a>
-    <span class="text-muted">{title}</span>
-  </div>
-</nav>
-
-<div class="container py-4">
-
-    <h2>{title}</h2>
-
-    <!-- SUMMARY -->
-    <div class="card p-3" id="summary">Loading stats...</div>
-
-    <!-- FORECAST -->
-    <div class="card p-3">
-        <h5>🌤 3-Day Forecast</h5>
-        <div id="forecast">Loading forecast...</div>
-    </div>
-
-    <!-- MOISTURE -->
-    <div class="card p-3">
-        <h5>💧 Moisture Over Time</h5>
-        <div class="chart-wrap">
-            <canvas id="moistureChart"></canvas>
-        </div>
-    </div>
-
-    <!-- WEATHER -->
-    <div class="card p-3">
-        <h5>🌦 Weather (Sun + Rain)</h5>
-        <div class="chart-wrap">
-            <canvas id="weatherChart"></canvas>
-        </div>
-    </div>
-
-</div>
-
-<script>
-
-let moistureChart;
-let weatherChart;
-
-async function loadAnalytics() {{
-
-    const res = await fetch(`/api/beds/{bed_id}/full-graph`);
-    const data = await res.json();
-
-    const life = await fetch(`/api/beds/{bed_id}/lifetime`).then(r => r.json());
-
-    const labels = (data.timestamps || []).map(t =>
-        new Date(t).toLocaleTimeString()
-    );
-
-    const avgMoisture = data.moisture?.length
-        ? (data.moisture.reduce((a,b)=>a+b,0)/data.moisture.length).toFixed(1)
-        : "0";
-
-    // -------------------------
-    // SUMMARY
-    // -------------------------
-    document.getElementById("summary").innerHTML = `
-        <div class="stat-grid">
-            <div class="stat">💧<b>${{avgMoisture}}</b> Avg Moisture</div>
-            <div class="stat">🚰<b>${{life.times_watered || 0}}</b> Watered</div>
-            <div class="stat">⏱<b>${{life.total_watering_minutes || 0}}m</b>  Total</div>
-        </div>
-    `;
-
-    // -------------------------
-    // MOISTURE CHART
-    // -------------------------
-    moistureChart = new Chart(
-        document.getElementById("moistureChart"),
-        {{
-            type: "line",
-            data: {{
-                labels,
-                datasets: [{{
-                    label: "Moisture",
-                    data: data.moisture || [],
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    tension: 0.4,
-                    fill: true
-                }}]
-            }},
-            options: {{
-                responsive: true,
-                maintainAspectRatio: false
-            }}
-        }}
-    );
-
-    // -------------------------
-    // WEATHER CHART
-    // -------------------------
-    weatherChart = new Chart(
-        document.getElementById("weatherChart"),
-        {{
-            type: "bar",
-            data: {{
-                labels,
-                datasets: [
-                    {{
-                        label: "Rain",
-                        data: data.rain || Array(labels.length).fill(0)
-                    }},
-                    {{
-                        label: "Sun",
-                        type: "line",
-                        data: data.sun || Array(labels.length).fill(5),
-                        borderDash: [6,4],
-                        pointRadius: 0,
-                        tension: 0.3
-                    }}
-                ]
-            }},
-            options: {{
-                responsive: true,
-                maintainAspectRatio: false
-            }}
-        }}
-    );
-
-    // -------------------------
-    // FORECAST
-    // -------------------------
-    try {{
-        const forecastRes = await fetch("/api/weather/forecast");
-        const forecast = await forecastRes.json();
-
-        document.getElementById("forecast").innerHTML = `
-            <div class="forecast-grid">
-                <div class="forecast-day">🌤<br><b>${{forecast.day1}}</b></div>
-                <div class="forecast-day">🌤<br><b>${{forecast.day2}}</b></div>
-                <div class="forecast-day">🌤<br><b>${{forecast.day3}}</b></div>
-            </div>
-        `;
-    }} catch (e) {{
-        document.getElementById("forecast").innerHTML =
-            "⚠ Forecast unavailable";
-    }}
-}}
-
-loadAnalytics();
-
-</script>
-
-</body>
-</html>
-"""
-
-    return html
 @app.get("/api/weather")
 def weather_summary():
-    weather = current_weather()
+    last_saved = 0
+
+    if time.time() - last_saved >= 300:
+        weather = current_weather()
+        last_saved = time.time()
+    
 
     return {
         "temp": weather["temp"],
