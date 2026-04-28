@@ -106,6 +106,17 @@ weather_cache = {
     "data": None,  # Cached weather response data
 }
 
+# defines docs URL and tags for better organization in API documentation
+app = FastAPI(
+    docs_url="/docs",
+    openapi_tags=[
+        {"name": "System", "description": "Health, overview, nodes"},
+        {"name": "Beds", "description": "Bed data, stats, graphs"},
+        {"name": "Control", "description": "Watering and valves"},
+        {"name": "Weather", "description": "Weather and rain prediction"},
+    ]
+)
+
 
 # ============================================================
 # 🌿 DATABASE MODELS (ORM)
@@ -325,7 +336,7 @@ def get_weather():
 # ============================================================
 
 
-@app.post("/api/bed-data", dependencies=[Depends(verify_api_key)])
+@app.post("/api/bed-data", dependencies=[Depends(verify_api_key)],tags=["Beds"])
 def receive_data(data: BedData, db: Session = Depends(get_db)):
     """
     Accept and store sensor readings from ESP32 microcontroller.
@@ -389,7 +400,7 @@ def receive_data(data: BedData, db: Session = Depends(get_db)):
 # ============================================================
 
 
-@app.get("/api/beds")
+@app.get("/api/beds", tags=["Beds"])
 def get_beds(db: Session = Depends(get_db)):
     """
     Retrieve the latest sensor reading for each plant bed.
@@ -443,7 +454,7 @@ def get_beds(db: Session = Depends(get_db)):
 # ============================================================
 
 
-@app.get("/api/beds/{bed_id}/history")
+@app.get("/api/beds/{bed_id}/history", tags=["Beds"])
 def history(bed_id: str, db: Session = Depends(get_db)):
     """
     Retrieve recent historical readings for a specific plant bed.
@@ -497,7 +508,7 @@ def history(bed_id: str, db: Session = Depends(get_db)):
 # ============================================================
 
 
-@app.get("/api/beds/{bed_id}/range")
+@app.get("/api/beds/{bed_id}/range", tags=["Beds"])
 def get_range(
     bed_id: str, start: datetime, end: datetime, db: Session = Depends(get_db)
 ):
@@ -547,7 +558,7 @@ def get_range(
 # ============================================================
 
 
-@app.get("/api/beds/{bed_id}/graph")
+@app.get("/api/beds/{bed_id}/graph", tags=["Beds"])
 def graph_data(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
     """
     Retrieve sensor data formatted for frontend charting libraries.
@@ -597,7 +608,7 @@ def graph_data(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
 # ============================================================
 
 
-@app.get("/api/beds/{bed_id}/stats")
+@app.get("/api/beds/{bed_id}/stats" , tags=["Beds"])
 def stats(bed_id: str, db: Session = Depends(get_db)):
     """
     Calculate aggregated statistics for a plant bed's moisture data.
@@ -647,7 +658,7 @@ def stats(bed_id: str, db: Session = Depends(get_db)):
 # ============================================================
 
 
-@app.get("/api/config/{bed_id}")
+@app.get("/api/config/{bed_id}", tags=["System"])
 def get_config(bed_id: str, db: Session = Depends(get_db)):
     """
     Retrieve current configuration settings for a plant bed.
@@ -696,7 +707,7 @@ def get_config(bed_id: str, db: Session = Depends(get_db)):
 # ============================================================
 
 
-@app.post("/api/config/{bed_id}", dependencies=[Depends(verify_api_key)])
+@app.post("/api/config/{bed_id}", dependencies=[Depends(verify_api_key)], tags=["System"])
 def update_config(bed_id: str, config: BedConfig, db: Session = Depends(get_db)):
     """
     Update configuration settings for a plant bed.
@@ -742,7 +753,7 @@ def update_config(bed_id: str, config: BedConfig, db: Session = Depends(get_db))
 # ============================================================
 # 🌧️ INTELLIGENT WATERING DECISION ENGINE
 # ============================================================
-@app.post("/api/should-water", dependencies=[Depends(verify_api_key)])
+@app.post("/api/should-water", dependencies=[Depends(verify_api_key)], tags=["Control"])
 def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get_db)):
 
     now = datetime.utcnow()
@@ -800,7 +811,7 @@ def should_water(bed_id: str, average_moisture: float, db: Session = Depends(get
 # ============================================================
 
 
-@app.get("/health")
+@app.get("/health", tags=["System"])
 def health():
     """
     Health check endpoint for monitoring service availability.
@@ -818,7 +829,7 @@ def health():
     return {"status": "alive"}
 
 
-@app.delete("/api/cleanup", dependencies=[Depends(verify_api_key)])
+@app.delete("/api/cleanup", dependencies=[Depends(verify_api_key)], tags=["System"])
 def cleanup(db: Session = Depends(get_db)):
     """
     Delete historical data older than 7 days.
@@ -847,7 +858,7 @@ def cleanup(db: Session = Depends(get_db)):
     return {"status": "cleaned"}
 
 
-@app.get("/api/beds/latest")
+@app.get("/api/beds/latest", tags=["Beds"])
 def latest(db: Session = Depends(get_db)):
 
     subquery = db.query(BedReading).order_by(BedReading.timestamp.desc()).all()
@@ -877,59 +888,478 @@ def latest(db: Session = Depends(get_db)):
     return seen
 
 
-#################################
-# main entry point for running the API server
-###################################
-@app.get("/", response_class=HTMLResponse)
-def dashboard():
-    return """
-<!DOCTYPE html>
-<html>
-<head>
-<title>🌱 Smart Garden Control Panel</title>
+@app.get("/api/will-rain", tags=["Weather"])
+def weather_api():
+    return get_weather()
 
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 
-<style>
-body {
-    background:#0f1115;
-    color:white;
+@app.get("/api/weather/current", tags=["Weather"])
+def current_weather():
+    url = (
+        "https://api.openweathermap.org/data/2.5/weather"
+        f"?q={CITY}&appid={OPENWEATHER_API_KEY}&units=metric"
+    )
+
+    r = requests.get(url)
+    data = r.json()
+
+    weather_main = data["weather"][0]["main"]
+
+    # 🌧️ real rain amount (mm in last hour)
+    rain = data.get("rain", {}).get("1h", 0)
+
+    # ☀️ sun intensity (inverse of clouds)
+    clouds = data.get("clouds", {}).get("all", 0)
+    sun = max(0, 100 - clouds)  # 0–100 scale
+
+    return {
+        "current": weather_main,
+        "is_raining_now": weather_main.lower() == "rain",
+        "temp": data["main"]["temp"],
+        "humidity": data["main"]["humidity"],
+        "rain": rain,
+        "sun": sun,
+    }
+
+
+@app.post("/api/water",tags=["Irrigation"], dependencies=[Depends(verify_api_key)])
+def water_bed(bed_id: str, duration: int = 3):
+    """
+    Turns valve ON for a fixed duration (simulation of irrigation)
+    """
+
+    now = datetime.utcnow()
+    active_valves[bed_id] = {"state": "ON", "until": now + timedelta(seconds=duration)}
+
+    return {"bed_id": bed_id, "valve_state": "ON", "duration": duration}
+
+
+@app.get("/api/valve/{bed_id}", tags=["Irrigation"])
+def valve_status(bed_id: str):
+    now = datetime.utcnow()
+
+    v = active_valves.get(bed_id)
+
+    if not v:
+        return {"bed_id": bed_id, "valve_state": "OFF"}
+
+    if now > v["until"]:
+        active_valves.pop(bed_id, None)
+        return {"bed_id": bed_id, "valve_state": "OFF"}
+
+    return {"bed_id": bed_id, "valve_state": "ON"}
+
+    ############################################
+    # Power modes endpoints
+    ################################
+
+
+@app.post("/api/beds/{bed_id}/mode", tags=["Irrigation"], dependencies=[Depends(verify_api_key)])
+def set_mode(bed_id: str, mode: str):
+    active_valves.setdefault(bed_id, {})
+
+    active_valves[bed_id]["mode"] = mode
+
+    return {"bed_id": bed_id, "mode": mode}
+
+
+@app.get("/api/beds/{bed_id}/mode", tags=["Irrigation"])
+def get_mode(bed_id: str):
+    return {
+        "bed_id": bed_id,
+        "mode": active_valves.get(bed_id, {}).get("mode", "normal"),
+    }
+
+
+@app.get("/api/beds/{bed_id}/full-graph", tags=["Irrigation"])
+def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
+
+    rows = (
+        db.query(BedReading)
+        .filter(BedReading.bed_id == bed_id)
+        .order_by(BedReading.timestamp.desc())
+        .limit(limit)
+        .all()
+    )
+
+    rows.reverse()
+
+    timestamps = []
+    moisture = []
+    valve = []
+    rssi = []
+
+    for r in rows:
+
+        # --------------------
+        # TIMESTAMP
+        # --------------------
+        timestamps.append(r.timestamp.isoformat() if r.timestamp else "")
+
+        # --------------------
+        # MOISTURE
+        # --------------------
+        moisture.append(r.average or 0)
+
+        # --------------------
+        # VALVE (0/1)
+        # --------------------
+        valve.append(1 if r.valve_state == "ON" else 0)
+
+        # --------------------
+        # RSSI (SAFE)
+        # --------------------
+        try:
+            rssi_val = float(r.rssi) if r.rssi is not None else -100
+        except:
+            rssi_val = -100
+
+        rssi.append(rssi_val)
+
+    return {
+        "timestamps": timestamps,
+        "moisture": moisture,
+        "rain": [0] * len(timestamps),
+        "valve": valve,
+        "rssi": rssi,
+    }
+
+
+@app.get("/api/beds/{bed_id}/lifetime", tags=["Irrigation"])
+def lifetime_stats(bed_id: str, db: Session = Depends(get_db)):
+
+    rows = (
+        db.query(BedReading)
+        .filter(BedReading.bed_id == bed_id)
+        .order_by(BedReading.timestamp.asc())
+        .all()
+    )
+
+    if not rows:
+        return {"error": "no data"}
+
+    water_events = 0
+    last_state = "OFF"
+    last_watered = None
+    total_on_time = timedelta(0)
+
+    last_on_time = None
+
+    for r in rows:
+
+        # detect ON transition
+        if r.valve_state == "ON" and last_state != "ON":
+            water_events += 1
+            last_on_time = r.timestamp
+            last_watered = r.timestamp
+
+        # detect OFF transition
+        if r.valve_state == "OFF" and last_state == "ON":
+            if last_on_time:
+                total_on_time += r.timestamp - last_on_time
+                last_on_time = None
+
+        last_state = r.valve_state
+
+    return {
+        "bed_id": bed_id,
+        "times_watered": water_events,
+        "last_watered": last_watered,
+        "total_watering_minutes": round(total_on_time.total_seconds() / 60, 2),
+        "avg_moisture": sum(r.average for r in rows) / len(rows),
+    }
+
+
+from datetime import datetime
+
+
+@app.post("/api/beds/{bed_id}/water-cycle", dependencies=[Depends(verify_api_key)], tags=["Irrigation"])
+def water_cycle(bed_id: str, valve_state: str):
+
+    now = datetime.utcnow()
+
+    # -------------------------
+    # INIT STORAGE
+    # -------------------------
+    if bed_id not in lifetime_stats_store:
+        lifetime_stats_store[bed_id] = {"times_watered": 0, "total_seconds": 0}
+
+    if bed_id not in watering_sessions:
+        watering_sessions[bed_id] = None
+
+    # -------------------------
+    # 🟢 START WATERING
+    # -------------------------
+    if valve_state == "ON":
+
+        # only start if not already running
+        if watering_sessions[bed_id] is None:
+            watering_sessions[bed_id] = {"start": now}
+
+        return {"bed_id": bed_id, "state": "started"}
+
+    # -------------------------
+    # 🔴 STOP WATERING
+    # -------------------------
+    if valve_state == "OFF":
+
+        session = watering_sessions.get(bed_id)
+
+        # only count if session exists
+        if session is not None:
+
+            duration = (now - session["start"]).total_seconds()
+
+            lifetime_stats_store[bed_id]["times_watered"] += 1
+            lifetime_stats_store[bed_id]["total_seconds"] += duration
+
+            watering_sessions[bed_id] = None
+
+            return {"bed_id": bed_id, "state": "stopped", "duration_sec": duration}
+
+        # OFF but no session = ignore safely
+        return {"bed_id": bed_id, "state": "ignored_no_session"}
+
+    return {"bed_id": bed_id, "state": "no_change"}
+
+
+@app.get("/api/beds/{bed_id}/lifetime", tags=["Irrigation"])
+def lifetime_stats_endpoint(bed_id: str):
+
+    stats = lifetime_stats.get(bed_id, {"times_watered": 0, "total_seconds": 0})
+
+    return {
+        "bed_id": bed_id,
+        "times_watered": stats["times_watered"],
+        "total_watering_minutes": round(stats["total_seconds"] / 60, 2),
+    }
+
+
+@app.post("/api/beds/{bed_id}/meta", tags=["System"])
+def save_bed_meta(bed_id: str, data: dict = Body(...), db: Session = Depends(get_db)):
+
+    row = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
+
+    if not row:
+        row = BedMetaDB(bed_id=bed_id)
+        db.add(row)
+
+    row.name = data.get("name", bed_id)
+    row.icon = data.get("icon", "🌱")
+
+    db.commit()
+    db.refresh(row)
+
+    return {"ok": True, "bed_id": bed_id, "meta": {"name": row.name, "icon": row.icon}}
+
+
+@app.get("/api/beds/{bed_id}/meta", tags=["System"])
+def get_bed_meta(bed_id: str, db: Session = Depends(get_db)):
+    row = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
+
+    if not row:
+        return {"bed_id": bed_id, "name": bed_id, "icon": "🌱"}
+
+    return {"bed_id": bed_id, "name": row.name, "icon": row.icon}
+
+
+@app.get("/api/beds/meta", tags=["System"])
+def get_all_bed_meta(db: Session = Depends(get_db)):
+    rows = db.query(BedMetaDB).all()
+
+    return {r.bed_id: {"name": r.name, "icon": r.icon} for r in rows}
+
+
+# adddes overview endpoint to show system status at a glance
+@app.get("/api/system/overview", tags=["System"])
+def system_overview(db: Session = Depends(get_db)):
+    rows = db.query(BedReading).order_by(BedReading.timestamp.desc()).all()
+
+    latest = {}
+    for r in rows:
+        if r.bed_id not in latest:
+            latest[r.bed_id] = r
+
+    total = len(latest)
+    dry = 0
+    watering = 0
+
+    for b in latest.values():
+        if b.average > 700:
+            dry += 1
+
+        live = active_valves.get(b.bed_id)
+        if live and live["state"] == "ON":
+            watering += 1
+
+    return {
+        "total_beds": total,
+        "dry_beds": dry,
+        "watering_beds": watering,
+        "healthy_beds": total - dry,
+    }
+
+
+import time
+
+_weather_cache = {
+    "data": None,
+    "last_update": 0
 }
 
+@app.get("/api/weather", tags=["System"])
+def weather_summary():
+    global _weather_cache
+
+    now = time.time()
+
+    # refresh every 5 minutes
+    if _weather_cache["data"] is None or now - _weather_cache["last_update"] > 300:
+        weather = current_weather()
+
+        _weather_cache["data"] = {
+            "temp": weather.get("temp"),
+            "humidity": weather.get("humidity"),
+            "is_raining_now": weather.get("is_raining_now"),
+            "will_rain": weather.get("will_rain"),
+        }
+
+        _weather_cache["last_update"] = now
+
+    return _weather_cache["data"]
+
+from pydantic import BaseModel
+
+
+class Heartbeat(BaseModel):
+    bed_id: str
+
+
+from fastapi import Query
+from datetime import datetime
+
+node_last_seen = {}
+
+
+@app.post("/api/node/heartbeat", tags=["System"])
+def node_heartbeat(
+    bed_id: str = Query(...), ip: str = Query(None), rssi: int = Query(None)
+):
+    now = datetime.utcnow().isoformat()
+
+    node_last_seen[bed_id] = {
+        "bed_id": bed_id,
+        "ip": ip,
+        "rssi": rssi,
+        "last_seen": now,
+    }
+
+    return {"ok": True, "bed_id": bed_id, "last_seen": now}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+GLOBAL_CSS = """
+body {
+    background:#0f1115;
+    color:#ffffff;
+    font-family: system-ui;
+}
+
+/* Global text rules */
+p, span, div, h1, h2, h3, h4, h5, li {
+    color:#ffffff;
+}
+
+/* Muted / secondary text */
+.small,
+.text-muted {
+    color: rgba(255,255,255,0.65) !important;
+}
+
+/* Links */
+a {
+    color:#00ff9a;
+}
+a:hover {
+    color:#00c77a;
+}
+
+/* Cards */
 .card {
     background:#1b1f2a;
     border:1px solid #2a2f3a;
-    transition: all 0.2s ease;
+    color:#ffffff;
 }
 
+/* Navbar */
 .navbar {
-    background:black;
+    background:#000;
     border-bottom:1px solid #2a2f3a;
 }
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+    align-items: stretch;
+}
 
+.node-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+/* Status colors */
 .status-good { color:#00ff9a; font-weight:bold; }
 .status-warn { color:#ffcc00; font-weight:bold; }
 .status-bad  { color:#ff4d4d; font-weight:bold; }
 
-.small {
-    font-size:12px;
-    color:#9aa4b2;
+/* Utility */
+.grid {
+    display:grid;
+    gap:10px;
 }
+"""
 
-.clickable-card {
-    cursor: pointer;
-}
 
-.clickable-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 0 15px rgba(0,255,154,0.15);
-    border-color: #00ff9a;
-}
-</style>
-</head>
-
-<body>
-
+NAVBAR = """
 <nav class="navbar navbar-expand-lg navbar-dark">
   <div class="container-fluid">
 
@@ -938,12 +1368,49 @@ body {
     <div class="navbar-nav">
       <a class="nav-link" href="/">Dashboard</a>
       <a class="nav-link" href="/nodes">🌿 Devices</a>
-      <a class="nav-link" href="/docs">API Docs</a>
+      <a class="nav-link" href="/app/docs">API Docs</a>
       <a class="nav-link" href="/about">About</a>
     </div>
 
   </div>
 </nav>
+"""
+
+def page(title: str, body: str):
+    return f"""
+<!DOCTYPE html>
+<html>
+<head>
+<title>{title}</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<style>
+{GLOBAL_CSS}
+</style>
+
+</head>
+
+<body>
+
+{NAVBAR}
+
+{body}
+
+</body>
+</html>
+"""
+
+
+#################################
+# main entry point for running the API server
+###################################
+@app.get("/", response_class=HTMLResponse, tags=["System"])
+def dashboard():
+
+    body =  """
+
+<body>
 
 <div class="container py-4">
 
@@ -1116,116 +1583,17 @@ async function loadBeds() {
 </body>
 </html>
 """
-
+    return page("Dashboard", body)
 
 # =======================================================
 # 📖 ABOUT PAGE
 # ============================================================
 
 
-@app.get("/about", response_class=HTMLResponse)
+@app.get("/about", response_class=HTMLResponse, tags=["System"])
 def about_page():
-    return """
-<!DOCTYPE html>
-<html>
-<style>
-    body {
-        background: #0f1115;
-        color: #ffffff;
-    }
+    body = """
 
-    h1, h2, h3, h4, h5 {
-        color: #ffffff !important;
-    }
-
-    p, li, pre {
-        color: #eaeaea;
-    }
-
-    .card {
-        background: #1b1f2a;
-        border: 1px solid #2a2f3a;
-        color: #ffffff;
-    }
-
-    .text-muted {
-        color: #b5b5b5 !important;
-    }
-
-    .tag {
-        display: inline-block;
-        padding: 4px 10px;
-        border-radius: 999px;
-        background: #2a2f3a;
-        margin: 2px;
-        font-size: 12px;
-        color: #ffffff;
-    }
-
-    .hero {
-        padding: 40px 0;
-        text-align: center;
-    }
-
-    .glow {
-        color: #00ff9a;
-        text-shadow: 0 0 10px rgba(0,255,154,0.4);
-    }
-    h4 {
-    color: #00ff9a !important;
-    text-shadow: 0 0 6px rgba(0,255,154,0.25);
-}
-</style>
-<head>
-    <title>About · Smart Garden</title>
-
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-
-    <style>
-        body {
-            background: #0f1115;
-            color: #e6e6e6;
-        }
-
-        .card {
-            background: #1b1f2a;
-            border: 1px solid #2a2f3a;
-        }
-
-        .tag {
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 999px;
-            background: #2a2f3a;
-            margin: 2px;
-            font-size: 12px;
-        }
-
-        .hero {
-            padding: 40px 0;
-            text-align: center;
-        }
-
-        .glow {
-            color: #00ff9a;
-            text-shadow: 0 0 10px rgba(0,255,154,0.4);
-        }
-    </style>
-</head>
-
-<nav class="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-secondary">
-  <div class="container-fluid">
-
-    <a class="navbar-brand" href="/">🌱 Smart Garden</a>
-
-    <div class="navbar-nav">
-      <a class="nav-link" href="/">Dashboard</a>
-      <a class="nav-link" href="/nodes">🌿 Devices</a>
-      <a class="nav-link" href="/docs">API Docs</a>
-      <a class="nav-link" href="/about">About</a>
-    </div>
-
-    </nav>
 <body>
 
 <div class="container py-5">
@@ -1315,7 +1683,7 @@ Dashboard UI (Chart.js)
 </body>
 </html>
 """
-
+    return page("About", body)
 
 ###################################################
 ## 🌿 DEVICES PAGE - REAL-TIME NODE STATUSES
@@ -1324,86 +1692,20 @@ Dashboard UI (Chart.js)
 from fastapi.responses import HTMLResponse
 
 
-@app.get("/nodes", response_class=HTMLResponse)
+@app.get("/nodes", response_class=HTMLResponse, tags=["System"])
 def node_status_page():
-    return """
-<!DOCTYPE html>
-<html>
-<head>
-<title>🛰 Garden Nodes</title>
-
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-
-<style>
-body {
-    background:#0f1115;
-    color:white;
-    font-family: system-ui, sans-serif;
-}
-
-.card {
-    background:#1b1f2a;
-    border:1px solid #2a2f3a;
-    border-radius:16px;
-    padding:16px;
-    transition: 0.2s ease;
-}
-
-.card:hover {
-    transform: translateY(-3px);
-    border-color: #00ff9a;
-    box-shadow: 0 0 12px rgba(0,255,154,0.15);
-}
-
-.grid {
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
-    gap:12px;
-}
-
-.good { color:#00ff9a; }
-.warn { color:#ffcc00; }
-.bad  { color:#ff4d4d; }
-
-.small {
-    font-size:12px;
-    color:#9aa4b2;
-}
-
-a.node-link {
-    text-decoration:none;
-    color:inherit;
-}
-</style>
-</head>
-
-<body>
-
-<nav class="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-secondary">
-  <div class="container-fluid">
-
-    <a class="navbar-brand" href="/">🌱 Smart Garden</a>
-
-    <div class="navbar-nav">
-      <a class="nav-link" href="/">Dashboard</a>
-      <a class="nav-link" href="/nodes">🌿 Devices</a>
-      <a class="nav-link" href="/docs">API Docs</a>
-      <a class="nav-link" href="/about">About</a>
-    </div>
-
-  </div>
-</nav>
-
+    body = """
+]
 <div class="container py-4">
 
-<h2>🛰 Garden Node Status</h2>
+<h2 class="mb-3">🛰 Garden Node Status</h2>
 
 <div id="nodes" class="grid"></div>
-
 
 <footer style="text-align:center; padding:20px; color:#9aa4b2; border-top:1px solid #2a2f3a; margin-top:40px;">
     Made with 💖 Nicky Blackburn
 </footer>
+
 </div>
 
 <script>
@@ -1442,30 +1744,25 @@ async function loadNodes() {
         if ((n.rssi ?? -100) < -85) rssiClass = "bad";
 
         html += `
-        <a class="node-link" href="/device/${bedId}">
+<a class="node-link" href="/device/${bedId}">
+    <div class="card node-card p-3">
 
-            <div class="card">
+        <h5>${icon} ${name}</h5>
 
-                <h5>${icon} ${name}</h5>
+        <div class="small">ID: ${bedId}</div>
+        <div class="small">IP: ${n.ip ?? "unknown"}</div>
 
-                <div class="small">ID: ${bedId}</div>
+        <p class="${rssiClass}">
+            📡 RSSI: ${n.rssi ?? "?"} dBm
+        </p>
 
-                <div class="small">IP: ${n.ip ?? "unknown"}</div>
+        <p>🔋 Battery: ${n.battery ? n.battery.toFixed(2) + "V" : "N/A"}</p>
+        <p>💧 Moisture: ${n.average?.toFixed(1) ?? "?"}</p>
+        <p>🚰 Valve: ${n.valve_state ?? "?"}</p>
 
-                <p class="${rssiClass}">
-                    📡 RSSI: ${n.rssi ?? "?"} dBm
-                </p>
-
-                <p>🔋 Battery: ${n.battery ? n.battery.toFixed(2) + "V" : "N/A"}</p>
-
-                <p>💧 Moisture: ${n.average?.toFixed(1) ?? "?"}</p>
-
-                <p>🚰 Valve: ${n.valve_state ?? "?"}</p>
-
-            </div>
-
-        </a>
-        `;
+    </div>
+</a>
+`;
     }
 
     document.getElementById("nodes").innerHTML = html;
@@ -1486,13 +1783,15 @@ async function loadNodes() {
 </body>
 </html>
 """
+    return page("Devices", body)
+
 
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from fastapi import Depends
 
 
-@app.get("/bed/{bed_id}/analytics", response_class=HTMLResponse)
+@app.get("/bed/{bed_id}/analytics", response_class=HTMLResponse, tags=["System"])
 def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
 
     meta = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
@@ -1555,6 +1854,7 @@ def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
 
         .muted {
             opacity: 0.7;
+            color: rgba(255, 255, 255, 0.65);
         }
     </style>
 </head>
@@ -1570,7 +1870,7 @@ def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
     <div class="navbar-nav">
       <a class="nav-link" href="/">Dashboard</a>
       <a class="nav-link" href="/nodes">🌿 Devices</a>
-      <a class="nav-link" href="/docs">API Docs</a>
+      <a class="nav-link" href="/app/docs">API Docs</a>
       <a class="nav-link" href="/about">About</a>
     </div>
 
@@ -1716,7 +2016,7 @@ loadAnalytics();
 
 
 
-@app.get("/device/{bed_id}", response_class=HTMLResponse)
+@app.get("/device/{bed_id}", response_class=HTMLResponse, tags=["System"])
 def device_page(bed_id: str, db: Session = Depends(get_db)):
 
     meta = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
@@ -1951,370 +2251,109 @@ setInterval(load, 3000);
 
     return HTMLResponse(html)
 
-@app.get("/api/will-rain")
-def weather_api():
-    return get_weather()
 
 
-@app.get("/api/weather/current")
-def current_weather():
-    url = (
-        "https://api.openweathermap.org/data/2.5/weather"
-        f"?q={CITY}&appid={OPENWEATHER_API_KEY}&units=metric"
-    )
+#######################################
+# Docs page
+####################################### 
+from fastapi.responses import HTMLResponse
 
-    r = requests.get(url)
-    data = r.json()
+@app.get("/app/docs", response_class=HTMLResponse, include_in_schema=False)
+def embedded_docs():
 
-    weather_main = data["weather"][0]["main"]
+    html = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>🌱 Smart Irrigation · API Docs</title>
 
-    # 🌧️ real rain amount (mm in last hour)
-    rain = data.get("rain", {}).get("1h", 0)
+<link href="https://cdn.jsdelivr.net/npm/swagger-ui-dist/swagger-ui.css" rel="stylesheet">
 
-    # ☀️ sun intensity (inverse of clouds)
-    clouds = data.get("clouds", {}).get("all", 0)
-    sun = max(0, 100 - clouds)  # 0–100 scale
-
-    return {
-        "current": weather_main,
-        "is_raining_now": weather_main.lower() == "rain",
-        "temp": data["main"]["temp"],
-        "humidity": data["main"]["humidity"],
-        "rain": rain,
-        "sun": sun,
-    }
-
-
-@app.post("/api/water")
-def water_bed(bed_id: str, duration: int = 3):
-    """
-    Turns valve ON for a fixed duration (simulation of irrigation)
-    """
-
-    now = datetime.utcnow()
-    active_valves[bed_id] = {"state": "ON", "until": now + timedelta(seconds=duration)}
-
-    return {"bed_id": bed_id, "valve_state": "ON", "duration": duration}
-
-
-@app.get("/api/valve/{bed_id}")
-def valve_status(bed_id: str):
-    now = datetime.utcnow()
-
-    v = active_valves.get(bed_id)
-
-    if not v:
-        return {"bed_id": bed_id, "valve_state": "OFF"}
-
-    if now > v["until"]:
-        active_valves.pop(bed_id, None)
-        return {"bed_id": bed_id, "valve_state": "OFF"}
-
-    return {"bed_id": bed_id, "valve_state": "ON"}
-
-    ############################################
-    # Power modes endpoints
-    ################################
-
-
-@app.post("/api/beds/{bed_id}/mode")
-def set_mode(bed_id: str, mode: str):
-    active_valves.setdefault(bed_id, {})
-
-    active_valves[bed_id]["mode"] = mode
-
-    return {"bed_id": bed_id, "mode": mode}
-
-
-@app.get("/api/beds/{bed_id}/mode")
-def get_mode(bed_id: str):
-    return {
-        "bed_id": bed_id,
-        "mode": active_valves.get(bed_id, {}).get("mode", "normal"),
-    }
-
-
-@app.get("/api/beds/{bed_id}/full-graph")
-def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
-
-    rows = (
-        db.query(BedReading)
-        .filter(BedReading.bed_id == bed_id)
-        .order_by(BedReading.timestamp.desc())
-        .limit(limit)
-        .all()
-    )
-
-    rows.reverse()
-
-    timestamps = []
-    moisture = []
-    valve = []
-    rssi = []
-
-    for r in rows:
-
-        # --------------------
-        # TIMESTAMP
-        # --------------------
-        timestamps.append(r.timestamp.isoformat() if r.timestamp else "")
-
-        # --------------------
-        # MOISTURE
-        # --------------------
-        moisture.append(r.average or 0)
-
-        # --------------------
-        # VALVE (0/1)
-        # --------------------
-        valve.append(1 if r.valve_state == "ON" else 0)
-
-        # --------------------
-        # RSSI (SAFE)
-        # --------------------
-        try:
-            rssi_val = float(r.rssi) if r.rssi is not None else -100
-        except:
-            rssi_val = -100
-
-        rssi.append(rssi_val)
-
-    return {
-        "timestamps": timestamps,
-        "moisture": moisture,
-        "rain": [0] * len(timestamps),
-        "valve": valve,
-        "rssi": rssi,
-    }
-
-
-@app.get("/api/beds/{bed_id}/lifetime")
-def lifetime_stats(bed_id: str, db: Session = Depends(get_db)):
-
-    rows = (
-        db.query(BedReading)
-        .filter(BedReading.bed_id == bed_id)
-        .order_by(BedReading.timestamp.asc())
-        .all()
-    )
-
-    if not rows:
-        return {"error": "no data"}
-
-    water_events = 0
-    last_state = "OFF"
-    last_watered = None
-    total_on_time = timedelta(0)
-
-    last_on_time = None
-
-    for r in rows:
-
-        # detect ON transition
-        if r.valve_state == "ON" and last_state != "ON":
-            water_events += 1
-            last_on_time = r.timestamp
-            last_watered = r.timestamp
-
-        # detect OFF transition
-        if r.valve_state == "OFF" and last_state == "ON":
-            if last_on_time:
-                total_on_time += r.timestamp - last_on_time
-                last_on_time = None
-
-        last_state = r.valve_state
-
-    return {
-        "bed_id": bed_id,
-        "times_watered": water_events,
-        "last_watered": last_watered,
-        "total_watering_minutes": round(total_on_time.total_seconds() / 60, 2),
-        "avg_moisture": sum(r.average for r in rows) / len(rows),
-    }
-
-
-from datetime import datetime
-
-
-@app.post("/api/beds/{bed_id}/water-cycle", dependencies=[Depends(verify_api_key)])
-def water_cycle(bed_id: str, valve_state: str):
-
-    now = datetime.utcnow()
-
-    # -------------------------
-    # INIT STORAGE
-    # -------------------------
-    if bed_id not in lifetime_stats_store:
-        lifetime_stats_store[bed_id] = {"times_watered": 0, "total_seconds": 0}
-
-    if bed_id not in watering_sessions:
-        watering_sessions[bed_id] = None
-
-    # -------------------------
-    # 🟢 START WATERING
-    # -------------------------
-    if valve_state == "ON":
-
-        # only start if not already running
-        if watering_sessions[bed_id] is None:
-            watering_sessions[bed_id] = {"start": now}
-
-        return {"bed_id": bed_id, "state": "started"}
-
-    # -------------------------
-    # 🔴 STOP WATERING
-    # -------------------------
-    if valve_state == "OFF":
-
-        session = watering_sessions.get(bed_id)
-
-        # only count if session exists
-        if session is not None:
-
-            duration = (now - session["start"]).total_seconds()
-
-            lifetime_stats_store[bed_id]["times_watered"] += 1
-            lifetime_stats_store[bed_id]["total_seconds"] += duration
-
-            watering_sessions[bed_id] = None
-
-            return {"bed_id": bed_id, "state": "stopped", "duration_sec": duration}
-
-        # OFF but no session = ignore safely
-        return {"bed_id": bed_id, "state": "ignored_no_session"}
-
-    return {"bed_id": bed_id, "state": "no_change"}
-
-
-@app.get("/api/beds/{bed_id}/lifetime")
-def lifetime_stats_endpoint(bed_id: str):
-
-    stats = lifetime_stats.get(bed_id, {"times_watered": 0, "total_seconds": 0})
-
-    return {
-        "bed_id": bed_id,
-        "times_watered": stats["times_watered"],
-        "total_watering_minutes": round(stats["total_seconds"] / 60, 2),
-    }
-
-
-@app.post("/api/beds/{bed_id}/meta")
-def save_bed_meta(bed_id: str, data: dict = Body(...), db: Session = Depends(get_db)):
-
-    row = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
-
-    if not row:
-        row = BedMetaDB(bed_id=bed_id)
-        db.add(row)
-
-    row.name = data.get("name", bed_id)
-    row.icon = data.get("icon", "🌱")
-
-    db.commit()
-    db.refresh(row)
-
-    return {"ok": True, "bed_id": bed_id, "meta": {"name": row.name, "icon": row.icon}}
-
-
-@app.get("/api/beds/{bed_id}/meta")
-def get_bed_meta(bed_id: str, db: Session = Depends(get_db)):
-    row = db.query(BedMetaDB).filter(BedMetaDB.bed_id == bed_id).first()
-
-    if not row:
-        return {"bed_id": bed_id, "name": bed_id, "icon": "🌱"}
-
-    return {"bed_id": bed_id, "name": row.name, "icon": row.icon}
-
-
-@app.get("/api/beds/meta")
-def get_all_bed_meta(db: Session = Depends(get_db)):
-    rows = db.query(BedMetaDB).all()
-
-    return {r.bed_id: {"name": r.name, "icon": r.icon} for r in rows}
-
-
-# adddes overview endpoint to show system status at a glance
-@app.get("/api/system/overview")
-def system_overview(db: Session = Depends(get_db)):
-    rows = db.query(BedReading).order_by(BedReading.timestamp.desc()).all()
-
-    latest = {}
-    for r in rows:
-        if r.bed_id not in latest:
-            latest[r.bed_id] = r
-
-    total = len(latest)
-    dry = 0
-    watering = 0
-
-    for b in latest.values():
-        if b.average > 700:
-            dry += 1
-
-        live = active_valves.get(b.bed_id)
-        if live and live["state"] == "ON":
-            watering += 1
-
-    return {
-        "total_beds": total,
-        "dry_beds": dry,
-        "watering_beds": watering,
-        "healthy_beds": total - dry,
-    }
-
-
-import time
-
-_weather_cache = {
-    "data": None,
-    "last_update": 0
+<style>
+body {
+    margin:0;
+    background:#0f1115;
+    color:white;
+    font-family: system-ui;
 }
 
-@app.get("/api/weather")
-def weather_summary():
-    global _weather_cache
+/* Top navbar like your device page */
+.navbar {
+    background:#000;
+    padding:12px 16px;
+    border-bottom:1px solid #2a2f3a;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+}
 
-    now = time.time()
+.navbar a {
+    color:white;
+    text-decoration:none;
+    margin-left:12px;
+}
 
-    # refresh every 5 minutes
-    if _weather_cache["data"] is None or now - _weather_cache["last_update"] > 300:
-        weather = current_weather()
+.header {
+    padding:16px;
+    font-size:20px;
+    font-weight:600;
+    border-bottom:1px solid #2a2f3a;
+    background:#11131a;
+}
 
-        _weather_cache["data"] = {
-            "temp": weather.get("temp"),
-            "humidity": weather.get("humidity"),
-            "is_raining_now": weather.get("is_raining_now"),
-            "will_rain": weather.get("will_rain"),
-        }
+/* Swagger container styling */
+#swagger-ui {
+    padding: 10px 20px 40px 20px;
+}
 
-        _weather_cache["last_update"] = now
+/* Make swagger blend into dark UI */
+.swagger-ui {
+    filter: invert(92%) hue-rotate(180deg);
+}
 
-    return _weather_cache["data"]
+/* Fix ugly inverted code blocks */
+.swagger-ui .highlight-code,
+.swagger-ui code,
+.swagger-ui pre {
+    filter: invert(100%) hue-rotate(180deg);
+}
+</style>
 
-from pydantic import BaseModel
+</head>
 
+<body>
 
-class Heartbeat(BaseModel):
-    bed_id: str
+<nav class="navbar">
+    <div>🌱 Smart Garden API</div>
+    <div>
+        <a href="/">Dashboard</a>
+        <a href="/nodes">Nodes</a>
+        <a href="/app/docs">Docs</a>
+    </div>
+</nav>
 
+<div class="header">
+    📘 API Documentation
+</div>
 
-from fastapi import Query
-from datetime import datetime
+<div id="swagger-ui"></div>
 
-node_last_seen = {}
+<script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
 
+<script>
+const ui = SwaggerUIBundle({
+    url: "/openapi.json",
+    dom_id: "#swagger-ui",
+    deepLinking: true,
+    presets: [
+        SwaggerUIBundle.presets.apis,
+        SwaggerUIBundle.SwaggerUIStandalonePreset
+    ],
+    layout: "BaseLayout"
+});
+</script>
 
-@app.post("/api/node/heartbeat")
-def node_heartbeat(
-    bed_id: str = Query(...), ip: str = Query(None), rssi: int = Query(None)
-):
-    now = datetime.utcnow().isoformat()
-
-    node_last_seen[bed_id] = {
-        "bed_id": bed_id,
-        "ip": ip,
-        "rssi": rssi,
-        "last_seen": now,
-    }
-
-    return {"ok": True, "bed_id": bed_id, "last_seen": now}
+</body>
+</html>
+"""
+    return HTMLResponse(html)
