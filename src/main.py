@@ -2244,21 +2244,33 @@ def system_overview(db: Session = Depends(get_db)):
     }
 
 
+import time
+
+_weather_cache = {
+    "data": None,
+    "last_update": 0
+}
+
 @app.get("/api/weather")
 def weather_summary():
-    last_saved = 0
+    global _weather_cache
 
-    if time.time() - last_saved >= 300:
+    now = time.time()
+
+    # refresh every 5 minutes
+    if _weather_cache["data"] is None or now - _weather_cache["last_update"] > 300:
         weather = current_weather()
-        last_saved = time.time()
 
-    return {
-        "temp": weather["temp"],
-        "humidity": weather["humidity"],
-        "is_raining_now": weather["is_raining_now"],
-        "will_rain": get_weather()["will_rain"],
-    }
+        _weather_cache["data"] = {
+            "temp": weather.get("temp"),
+            "humidity": weather.get("humidity"),
+            "is_raining_now": weather.get("is_raining_now"),
+            "will_rain": weather.get("will_rain"),
+        }
 
+        _weather_cache["last_update"] = now
+
+    return _weather_cache["data"]
 
 from pydantic import BaseModel
 
