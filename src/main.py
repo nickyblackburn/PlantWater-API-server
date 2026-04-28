@@ -1317,7 +1317,7 @@ from fastapi.responses import HTMLResponse
 
 @app.get("/nodes", response_class=HTMLResponse)
 def node_status_page():
-    return HTMLResponse(content="""
+    return """
 <!DOCTYPE html>
 <html>
 <head>
@@ -1339,15 +1339,15 @@ body {
     padding:16px;
 }
 
-.good { color:#00ff9a; }
-.warn { color:#ffcc00; }
-.bad  { color:#ff4d4d; }
-
 .grid {
     display:grid;
     grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
     gap:12px;
 }
+
+.good { color:#00ff9a; }
+.warn { color:#ffcc00; }
+.bad  { color:#ff4d4d; }
 
 .small {
     font-size:12px;
@@ -1358,7 +1358,7 @@ body {
 
 <body>
 
-<nav class="navbar navbar-expand-lg navbar-dark">
+<nav class="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-secondary">
   <div class="container-fluid">
 
     <a class="navbar-brand" href="/">🌱 Smart Garden</a>
@@ -1370,8 +1370,7 @@ body {
       <a class="nav-link" href="/about">About</a>
     </div>
 
-  </div>
-</nav>
+    </nav>
 
 <div class="container py-4">
 
@@ -1383,28 +1382,45 @@ body {
 
 <script>
 
+let meta = {};
+
+/* -------------------------
+   LOAD META (IMPORTANT PART)
+------------------------- */
+async function loadMeta() {
+    const res = await fetch("/api/beds/meta");
+    meta = await res.json();
+}
+
+/* -------------------------
+   LOAD NODES
+------------------------- */
 async function loadNodes() {
+
     const res = await fetch("/api/beds/latest");
     const data = await res.json();
 
     let html = "";
 
-    for (const id in data) {
-        const n = data[id];
+    for (const bedId in data) {
 
-        // RSSI quality estimate
+        const n = data[bedId];
+        const m = meta[bedId] || {};
+
+        const name = m.name || bedId;
+        const icon = m.icon || "🌱";
+
+        // RSSI quality
         let rssiClass = "good";
-        if (n.rssi < -70) rssiClass = "warn";
-        if (n.rssi < -85) rssiClass = "bad";
-
-        // battery status
-        let batt = n.battery ?? null;
-        let battText = batt ? batt.toFixed(2) + "V" : "N/A";
+        if ((n.rssi ?? -100) < -70) rssiClass = "warn";
+        if ((n.rssi ?? -100) < -85) rssiClass = "bad";
 
         html += `
         <div class="card">
 
-            <h5>🌱 ${id}</h5>
+            <h5>${icon} ${name}</h5>
+
+            <div class="small">ID: ${bedId}</div>
 
             <div class="small">IP: ${n.ip ?? "unknown"}</div>
 
@@ -1412,7 +1428,7 @@ async function loadNodes() {
                 📡 RSSI: ${n.rssi ?? "?"} dBm
             </p>
 
-            <p>🔋 Battery: ${battText}</p>
+            <p>🔋 Battery: ${n.battery ? n.battery.toFixed(2) + "V" : "N/A"}</p>
 
             <p>💧 Moisture: ${n.average?.toFixed(1) ?? "?"}</p>
 
@@ -1422,17 +1438,24 @@ async function loadNodes() {
         `;
     }
 
-    nodes.innerHTML = html;
+    document.getElementById("nodes").innerHTML = html;
 }
 
-setInterval(loadNodes, 3000);
-loadNodes();
+/* -------------------------
+   INIT
+------------------------- */
+(async function init() {
+    await loadMeta();
+    await loadNodes();
+
+    setInterval(loadNodes, 3000);
+})();
 
 </script>
 
 </body>
 </html>
-""")
+"""
 
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
