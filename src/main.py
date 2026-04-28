@@ -1714,8 +1714,6 @@ from datetime import datetime, timedelta
 # and maybe node_last_seen from heartbeat
 
 node_last_seen = {}  # from heartbeat endpoint
-
-
 @app.get("/device/{bed_id}", response_class=HTMLResponse)
 def device_page(bed_id: str, db: Session = Depends(get_db)):
 
@@ -1800,11 +1798,6 @@ body {{
         <h5 id="battery">-</h5>
     </div>
 
-    <div class="card">
-        <div class="small">Moisture</div>
-        <h5 id="moisture">-</h5>
-    </div>
-
 </div>
 
 <div class="card">
@@ -1814,13 +1807,11 @@ body {{
     </div>
 </div>
 
-
-
 </div>
 
 <script>
 
-let rssiChart, moistureChart;
+let rssiChart = null;
 
 async function load() {{
 
@@ -1830,10 +1821,13 @@ async function load() {{
     const b = data["{bed_id}"];
     if (!b) return;
 
-    // ONLINE STATUS (heartbeat-based)
-    const now = new Date().getTime();
-    const lastSeen = b.last_seen ? new Date(b.last_seen).getTime() : now;
+    document.getElementById("ip").innerText = b.ip ?? "unknown";
+    document.getElementById("rssi").innerText = b.rssi ?? "N/A";
+    document.getElementById("battery").innerText =
+        b.battery ? b.battery.toFixed(2) + "V" : "N/A";
 
+    const now = Date.now();
+    const lastSeen = b.last_seen ? new Date(b.last_seen).getTime() : now;
     const online = (now - lastSeen) < 15000;
 
     document.getElementById("status").innerHTML =
@@ -1841,56 +1835,53 @@ async function load() {{
         ? "<span class='good'>🟢 ONLINE</span>"
         : "<span class='bad'>🔴 OFFLINE</span>";
 
-    document.getElementById("ip").innerText = b.ip ?? "unknown";
-    document.getElementById("rssi").innerText = b.rssi ?? "N/A";
-    document.getElementById("battery").innerText = b.battery ? b.battery.toFixed(2) + "V" : "N/A";
-    document.getElementById("moisture").innerText = b.average?.toFixed(1) ?? "N/A";
+    // -------------------------
+    // HISTORY SAFE FETCH
+    // -------------------------
+    const histRes = await fetch("/api/beds/{bed_id}/full-graph");
+    const hist = await histRes.json();
 
-    // HISTORY
-    const hist = await fetch("/api/beds/{bed_id}/full-graph").then(r => r.json());
+    const timestamps = (hist.timestamps || []).map(t =>
+        new Date(t).toLocaleTimeString()
+    );
 
     const rssi = hist.rssi || [];
-    const moisture = hist.moisture || [];
-    const labels = (hist.timestamps || []).map(t => new Date(t).toLocaleTimeString());
 
-    if (!rssiChart) {{
-        rssiChart = new Chart(document.getElementById("rssiChart"), {{
-            type: "line",
-            data: {{
-                labels,
-                datasets: [{{
-                    label: "RSSI",
-                    data: rssi,
-                    borderWidth: 2,
-                    pointRadius: 0
-                }}]
-            }},
-            options: {{
-                responsive: true,
-                maintainAspectRatio: false
-            }}
-        }});
+    const minLen = Math.min(timestamps.length, rssi.length);
+
+    const labels = timestamps.slice(0, minLen);
+    const rssiData = rssi.slice(0, minLen);
+
+    // -------------------------
+    // FIX: ALWAYS REBUILD CHART
+    // -------------------------
+    if (rssiChart) {{
+        rssiChart.destroy();
     }}
 
-    if (!moistureChart) {{
-        moistureChart = new Chart(document.getElementById("moistureChart"), {{
-            type: "line",
-            data: {{
-                labels,
-                datasets: [{{
-                    label: "Moisture",
-                    data: moisture,
-                    borderWidth: 2,
-                    pointRadius: 0
-                }}]
-            }},
-            options: {{
-                responsive: true,
-                maintainAspectRatio: false
+    rssiChart = new Chart(document.getElementById("rssiChart"), {{
+        type: "line",
+        data: {{
+            labels: labels,
+            datasets: [{{
+                label: "RSSI (dBm)",
+                data: rssiData,
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0.3
+            }}]
+        }},
+        options: {{
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {{
+                y: {{
+                    suggestedMin: -100,
+                    suggestedMax: -30
+                }}
             }}
-        }});
-    }}
-
+        }}
+    }});
 }}
 
 load();
@@ -1903,14 +1894,6 @@ setInterval(load, 3000);
 """
 
     return HTMLResponse(html)
-
-
-
-
-
-
-
-
 
 
 
@@ -2032,13 +2015,22 @@ def full_graph(bed_id: str, limit: int = 200, db: Session = Depends(get_db)):
             valve.append(1)
         else:
             valve.append(0)
+        timestamps = []
+        rssi = []
 
-        print (f"Reading: {r.timestamp} - Moisture: {r.average} - Valve: {r.valve_state}")
+        
+        # SAFE RSSI HANDLING
+    
+        rssi_value = getattr(r, "rssi", None)
+        rssi.append(rssi_value if rssi_value is not None else -100)
+
+        print (f"Reading: {r.timestamp} - Moisture: {r.average} - Valve: {r.valve_state} - RSSI: {rssi[-1]}")
     return {
         "timestamps": timestamps,
         "moisture": moisture,
         "rain": [0] * len(timestamps),
         "valve": valve,
+        "rssi": rssi,
     }
 
 
