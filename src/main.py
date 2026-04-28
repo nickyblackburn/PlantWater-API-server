@@ -1356,6 +1356,49 @@ a:hover {
     display:grid;
     gap:10px;
 }
+
+body {
+            background: radial-gradient(circle at top, #151922, #0f1115);
+            color: #e6eaf2;
+            font-family: system-ui, sans-serif;
+        }
+
+        .card {
+            background: linear-gradient(145deg, #1b1f2a, #141821);
+            border: 1px solid #2a2f3a;
+            border-radius: 18px;
+            margin-bottom: 14px;
+        }
+
+        .chart-wrap {
+            position: relative;
+            height: 320px;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }
+
+        .stat {
+            background: #12151c;
+            padding: 12px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .weather-main {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .temp {
+            font-size: 42px;
+            font-weight: bold;
+        }
+
 """
 
 
@@ -1384,6 +1427,7 @@ def page(title: str, body: str):
 <title>{title}</title>
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
 {GLOBAL_CSS}
@@ -1744,6 +1788,7 @@ async function loadNodes() {
         if ((n.rssi ?? -100) < -85) rssiClass = "bad";
 
         html += `
+
 <a class="node-link" href="/device/${bedId}">
     <div class="card node-card p-3">
 
@@ -1810,7 +1855,69 @@ def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
-        body {
+     body {
+    background:#0f1115;
+    color:#ffffff;
+    font-family: system-ui;
+}
+
+/* Global text rules */
+p, span, div, h1, h2, h3, h4, h5, li {
+    color:#ffffff;
+}
+
+/* Muted / secondary text */
+.small,
+.text-muted {
+    color: rgba(255,255,255,0.65) !important;
+}
+
+/* Links */
+a {
+    color:#00ff9a;
+}
+a:hover {
+    color:#00c77a;
+}
+
+/* Cards */
+.card {
+    background:#1b1f2a;
+    border:1px solid #2a2f3a;
+    color:#ffffff;
+}
+
+/* Navbar */
+.navbar {
+    background:#000;
+    border-bottom:1px solid #2a2f3a;
+}
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+    align-items: stretch;
+}
+
+.node-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+/* Status colors */
+.status-good { color:#00ff9a; font-weight:bold; }
+.status-warn { color:#ffcc00; font-weight:bold; }
+.status-bad  { color:#ff4d4d; font-weight:bold; }
+
+/* Utility */
+.grid {
+    display:grid;
+    gap:10px;
+}
+
+body {
             background: radial-gradient(circle at top, #151922, #0f1115);
             color: #e6eaf2;
             font-family: system-ui, sans-serif;
@@ -1852,15 +1959,11 @@ def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
             font-weight: bold;
         }
 
-        .muted {
-            opacity: 0.7;
-            color: rgba(255, 255, 255, 0.65);
-        }
+      
     </style>
 </head>
 
 <body>
-
 
 <nav class="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-secondary">
   <div class="container-fluid">
@@ -1882,27 +1985,30 @@ def bed_analytics_page(bed_id: str, db: Session = Depends(get_db)):
 <h2>{title}</h2>
 
 <div class="card p-3" id="summary">Loading...</div>
+
 <!-- WEATHER CARD -->
 <div class="card p-3">
     <h5>🌤 Weather</h5>
     <div id="weatherBox">Loading weather...</div>
 </div>
 
-<!-- MOISTURE (UNCHANGED) -->
+<!-- MOISTURE -->
 <div class="card p-3">
     <h5>💧 Moisture</h5>
     <div class="chart-wrap">
         <canvas id="moistureChart"></canvas>
     </div>
+</div>
 
-
-    
+<!-- FORECAST (FIXED MISSING ELEMENT) -->
+<div class="card p-3">
+    <h5>📅 4 Day Forecast</h5>
+    <div class="stat-grid" id="forecast4day"></div>
 </div>
 
 <footer style="text-align:center; padding:20px; color:#9aa4b2; border-top:1px solid #2a2f3a; margin-top:40px;">
     Made with 💖 Nicky Blackburn
 </footer>
-
 
 </div>
 
@@ -1942,7 +2048,7 @@ async function loadAnalytics() {
         "<div class='stat'>⏱ <b>" + (life.total_watering_minutes || 0) + "m</b></div>" +
         "</div>";
 
-    // MOISTURE CHART
+    // CHART
     moistureChart = new Chart(
         document.getElementById("moistureChart"),
         {
@@ -1965,7 +2071,7 @@ async function loadAnalytics() {
         }
     );
 
-    // WEATHER CARD
+    // WEATHER
     document.getElementById("weatherBox").innerHTML = `
         <div class="weather-main">
             <div>
@@ -1979,7 +2085,7 @@ async function loadAnalytics() {
         </div>
     `;
 
-    // 4 DAY FORECAST
+    // FORECAST
     document.getElementById("forecast4day").innerHTML =
         forecast.map(day => {
 
@@ -2000,7 +2106,6 @@ async function loadAnalytics() {
                 </div>
             `;
         }).join("");
-
 }
 
 loadAnalytics();
@@ -2011,9 +2116,11 @@ loadAnalytics();
 </html>
 """
 
-    return HTMLResponse(content=html.replace("{bed_id}", bed_id).replace("{title}", title))
-
-
+    return HTMLResponse(
+        html
+        .replace("{title}", title)
+        .replace("{bed_id}", bed_id)
+    )
 
 
 @app.get("/device/{bed_id}", response_class=HTMLResponse, tags=["System"])
