@@ -2000,11 +2000,6 @@ body {
     </div>
 </div>
 
-<!-- FORECAST (FIXED MISSING ELEMENT) -->
-<div class="card p-3">
-    <h5>📅 4 Day Forecast</h5>
-    <div class="stat-grid" id="forecast4day"></div>
-</div>
 
 <footer style="text-align:center; padding:20px; color:#9aa4b2; border-top:1px solid #2a2f3a; margin-top:40px;">
     Made with 💖 Nicky Blackburn
@@ -2139,40 +2134,113 @@ def device_page(bed_id: str, db: Session = Depends(get_db)):
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-<style>
-body {{
+ <style>
+     body {{
     background:#0f1115;
-    color:white;
+    color:#ffffff;
     font-family: system-ui;
 }}
 
+/* Global text rules */
+p, span, div, h1, h2, h3, h4, h5, li{{
+    color:#ffffff;
+}}
+
+/* Muted / secondary text */
+.small,
+.text-muted {{
+    color: rgba(255,255,255,0.65) !important;
+}}
+
+/* Links */
+a {{
+    color:#00ff9a;
+}}
+a:hover {{
+    color:#00c77a;
+}}
+
+/* Cards */
 .card {{
     background:#1b1f2a;
     border:1px solid #2a2f3a;
-    border-radius:16px;
-    padding:16px;
-    margin-bottom:12px;
+    color:#ffffff;
 }}
 
-.good {{ color:#00ff9a; }}
-.warn {{ color:#ffcc00; }}
-.bad  {{ color:#ff4d4d; }}
+/* Navbar */
+.navbar {{
+    background:#000;
+    border-bottom:1px solid #2a2f3a;
+}}
+.grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+    align-items: stretch;
+}}
 
+.node-card {{
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}}
+
+/* Status colors */
+.status-good {{ color:#00ff9a; font-weight:bold; }}
+.status-warn {{ color:#ffcc00; font-weight:bold; }}
+.status-bad  {{color:#ff4d4d; font-weight:bold; }}
+
+/* Utility */
 .grid {{
     display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
     gap:10px;
 }}
 
-.small {{
-    font-size:12px;
-    color:#9aa4b2;
-}}
+body {{
+            background: radial-gradient(circle at top, #151922, #0f1115);
+            color: #e6eaf2;
+            font-family: system-ui, sans-serif;
+        }}
 
-.chart-wrap {{
-    height:260px;
-}}
-</style>
+        .card {{
+            background: linear-gradient(145deg, #1b1f2a, #141821);
+            border: 1px solid #2a2f3a;
+            border-radius: 18px;
+            margin-bottom: 14px;
+        }}
+
+        .chart-wrap {{
+            position: relative;
+            height: 320px;
+        }}
+
+        .stat-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }}
+
+        .stat {{
+            background: #12151c;
+            padding: 12px;
+            border-radius: 12px;
+            text-align: center;
+        }}
+
+        .weather-main {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+
+        .temp {{
+            font-size: 42px;
+            font-weight: bold;
+        }}
+
+      
+    </style>
 </head>
 
 <body>

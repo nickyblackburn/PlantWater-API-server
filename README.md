@@ -165,4 +165,5 @@ If you want to change the weather location or API key, update `CITY` and `OPENWE
 7. fix ux of the historical data page -x x
 8. Ad ai like plant s status stuff  
 9. get ip adresses to show up on device page 
+10. fix ux an ui layoout 
 
